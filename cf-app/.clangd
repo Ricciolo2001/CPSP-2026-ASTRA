@@ -1,0 +1,11 @@
+CompileFlags:
+  Remove:
+    - "-fconserve-stack"
+    - "-fno-var-tracking-assignments"
+    - "-fno-ipa-sra"
+    - "-mno-thumb-interwork"
+    - "-fstack-usage"
+    - "-mfp16-format=ieee"
+  Add:
+    - "-target"
+    - "arm-none-eabi"
