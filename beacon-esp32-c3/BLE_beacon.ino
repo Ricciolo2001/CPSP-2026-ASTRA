@@ -1,5 +1,6 @@
 // This code is mounted on a BLE beacon used for testing
 
+#include <Arduino.h> // Serve solo se si usa platform IO
 #include <NimBLEDevice.h>  // Lightweight BLE library for esp32-C3
 
 void setup() {
@@ -24,7 +25,7 @@ void setup() {
 
 void loop() {
   digitalWrite(8, LOW);
-  delay(100);
+  delay(150);
   digitalWrite(8, HIGH);
-  delay(900);
+  delay(1250);
 }
