@@ -1,1 +1,3 @@
 obj-y += src/
+
+ccflags-y += -DENABLE_UART1
