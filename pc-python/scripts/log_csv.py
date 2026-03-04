@@ -63,3 +63,31 @@ def main():
 
 if __name__ == "__main__":
     main()
+        # Seq jump warning
+        if last_seq is not None:
+            expected = (last_seq + 1) % 65536
+            if t.seq != expected:
+                print(f"[warn] seq jump: {last_seq} -> {t.seq} (expected {expected})")
+        last_seq = t.seq
+
+        w.writerow([time.time(), t.x, t.y, t.yaw, t.rssi, t.seq])
+        f.flush()
+
+    cf.appchannel.packet_received.add_callback(on_packet)
+
+    print(f"Connecting to {URI}")
+    cf.open_link(URI)
+
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        print("Closing link")
+        cf.close_link()
+        f.close()
+
+
+if __name__ == "__main__":
+    main()
