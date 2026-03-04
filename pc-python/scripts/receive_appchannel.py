@@ -1,13 +1,15 @@
 import time
+
 from cflib.crazyflie import Crazyflie
 from cflib.crtp import init_drivers
 
 from astra.protocol import PKT_SIZE, unpack_packet
 
-# TO DO: put real URI
+# TODO: put your real URI
 URI = "radio://0/80/2M/E7E7E7E7E7"
 
 last_seq = None
+
 
 def on_packet(packet: bytes):
     global last_seq
@@ -32,6 +34,7 @@ def on_packet(packet: bytes):
 
     print(f"x={t.x:.3f} y={t.y:.3f} yaw={t.yaw:.3f} rssi={t.rssi} seq={t.seq}")
 
+
 def main():
     init_drivers(enable_debug_driver=False)
 
@@ -49,6 +52,7 @@ def main():
     finally:
         print("Closing link")
         cf.close_link()
+
 
 if __name__ == "__main__":
     main()
