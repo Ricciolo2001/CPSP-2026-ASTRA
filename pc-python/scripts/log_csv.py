@@ -12,6 +12,7 @@ OUT = Path("telemetry_log.csv")
 
 last_seq = None
 
+
 def main():
     global last_seq
 
@@ -24,8 +25,6 @@ def main():
     w.writerow(["t", "x", "y", "yaw", "rssi", "seq"])
 
     def on_packet(packet: bytes):
-        nonlocal w
-        nonlocal f
         global last_seq
 
         if len(packet) != PKT_SIZE:
@@ -60,6 +59,7 @@ def main():
         print("Closing link")
         cf.close_link()
         f.close()
+
 
 if __name__ == "__main__":
     main()
