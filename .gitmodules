@@ -1,3 +1,3 @@
 [submodule "crazyflie-firmware"]
-	path = crazyflie-firmware
+	path = cf-firmware
 	url = https://github.com/bitcraze/crazyflie-firmware.git
