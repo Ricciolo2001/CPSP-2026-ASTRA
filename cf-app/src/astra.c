@@ -26,11 +26,6 @@
 
 static xQueueHandle esp32Queue;
 
-struct crtp_uart_bridge {
-  uint32_t uart_port; // UART port number (e.g., 2 for UART2)
-  xQueueHandle queue; // Queue for CRTP packets
-};
-
 // This function is called by the CRTP handler when a packet is received on the ESP32 port.
 void crtpPortEsp32Handler(CRTPPacket *packet) { xQueueSend(esp32Queue, packet, 0); }
 
