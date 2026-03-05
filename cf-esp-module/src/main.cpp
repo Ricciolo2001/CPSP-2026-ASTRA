@@ -1,10 +1,13 @@
 #include <Arduino.h>
 #include <stdio.h>
+#include <stdlib.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "sdkconfig.h"
+
 #include "BLEManager.h"
 
 // !================================================
@@ -23,15 +26,17 @@
 
 // !================================================
 
-#define TXD_PIN (4)                  // UART TX pin
-#define RXD_PIN (5)                  // UART RX pin
+#define TXD_PIN (5)                  // UART TX pin
+#define RXD_PIN (6)                  // UART RX pin
 #define RTS_PIN (UART_PIN_NO_CHANGE) // UART RTS pin (not used)
 #define CTS_PIN (UART_PIN_NO_CHANGE) // UART CTS pin (not used)
 
 #define UART_PORT_NUM (UART_NUM_1)
-#define UART_BAUD_RATE (115000)
+#define UART_BAUD_RATE (115200)
 #define BUF_SIZE (1024)
 #define RECIEVER_TASK_STACK_SIZE (BUF_SIZE * 2) // Remembre to increase this if you want to receive bigger messages
+
+BleManager ble;
 
 static void uart_reciever_task(void *arg)
 {
@@ -72,14 +77,48 @@ static void uart_reciever_task(void *arg)
       // Null-terminate the received data
       data[len] = '\0';
       Serial.printf("Received %d bytes: '%s'\n", len, (char *)data);
-      if (strcmp((char *)data, "LED ON") == 0) {
-        digitalWrite(BUILTIN_LED, LOW); // Turn on the LED
-        Serial.println("LED turned ON");
-      } else if (strcmp((char *)data, "LED OFF") == 0) {
-        digitalWrite(BUILTIN_LED, HIGH); // Turn off the LED
-        Serial.println("LED turned OFF");
+      if (strcmp((char *)data, "SCAN") == 0)
+      {
+        Serial.println("Inizio scan");
+        std::vector<BleDevice> devices = ble.scanDevices(5);
+        Serial.println("Scan completata");
+
+        int i = 0;
+        for (const auto &dev : devices)
+        {
+          Serial.print("Device ");
+          Serial.println(i++);
+          Serial.print("  Name: ");
+          Serial.println(dev.name.c_str());
+          Serial.print("  Address: ");
+          Serial.println(dev.address.c_str());
+          Serial.print("  RSSI: ");
+          Serial.println(dev.rssi);
+          Serial.print("  Distance: ");
+          Serial.println(dev.distance);
+          Serial.println("---------------------");
+        }
+        for (const auto &dev : devices)
+        { // TODO: Trasformalo in un json
+          char buf[128];
+          snprintf(buf, sizeof(buf), "%s,%s,%d,%.2f\t",
+                   dev.name.c_str(),
+                   dev.address.c_str(),
+                   dev.rssi,
+                   dev.distance);
+          uart_write_bytes(UART_PORT_NUM, buf, strlen(buf));
+        }
+        uart_write_bytes(UART_PORT_NUM, "\n", strlen("\n"));
+
       }
-      else {
+      else if (strcmp((char *)data, "GET DISTANCE") == 0)
+      {
+        /*len = uart_read_bytes(UART_PORT_NUM, data, BUF_SIZE, 20 / portTICK_RATE_MS);
+        
+          ;*/
+      }
+      else
+      {
         Serial.println("Unknown command received.");
       }
     }
@@ -88,12 +127,10 @@ static void uart_reciever_task(void *arg)
 
 // =================================================
 
-BleManager ble;
-
 void setup()
 {
   Serial.begin(115200);
-  delay(500); // Better safe than sorry?
+  delay(1000); // Better safe than sorry?
   Serial.println("Serial communication setup complete.");
 
   ble.init();
@@ -101,9 +138,10 @@ void setup()
 
   pinMode(BUILTIN_LED, OUTPUT);
   digitalWrite(BUILTIN_LED, HIGH); // LOW turns the LED on, HIGH turns it off like who designed that?
+
+  xTaskCreate(uart_reciever_task, "uart_reciever_task", RECIEVER_TASK_STACK_SIZE, NULL, 10, NULL);
 }
 
 void loop()
 {
-  xTaskCreate(uart_reciever_task, "uart_reciever_task", RECIEVER_TASK_STACK_SIZE, NULL, 10, NULL);
 }
