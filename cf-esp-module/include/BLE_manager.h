@@ -4,13 +4,7 @@
 #include <NimBLEDevice.h>
 #include <vector>
 #include <string>
-
-struct BleDevice {
-    std::string name;
-    std::string address;
-    int rssi;
-    float distance;
-};
+#include "Struct/BLE_device.h"
 
 class BleManager : public NimBLEAdvertisedDeviceCallbacks {
 public:

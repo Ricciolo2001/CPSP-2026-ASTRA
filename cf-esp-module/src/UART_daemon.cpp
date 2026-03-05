@@ -1,0 +1,119 @@
+#include "UART_daemon.h"
+
+void uart_reciever_task(void *arg)
+{
+
+    Serial.println("UART receiver task beguin creation.");
+
+    // Custom parameters
+    UartTaskParams *params = (UartTaskParams *)arg;
+    uart_port_t port = params->port;
+    int baudrate = params->baudrate;
+    BleManager *ble = params->ble;
+
+    /* Configure parameters of an UART driver, communication pins and install the driver */
+    uart_config_t uart_config = {
+        .baud_rate = baudrate,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    };
+    int intr_alloc_flags = 0;
+
+    Serial.println("UART configuration complete, installing driver.");
+
+#if CONFIG_UART_ISR_IN_IRAM
+    intr_alloc_flags = ESP_INTR_FLAG_IRAM;
+#endif
+
+    ESP_ERROR_CHECK(uart_driver_install(port, BUF_SIZE * 2, 0, 0, NULL, intr_alloc_flags));
+    ESP_ERROR_CHECK(uart_param_config(port, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(port, TXD_PIN, RXD_PIN, RTS_PIN, CTS_PIN));
+
+    Serial.println("UART driver installed, starting to receive data.");
+
+    // Configure a temporary buffer for the incoming data
+    uint8_t *data = (uint8_t *)malloc(BUF_SIZE);
+
+    while (69)
+    {
+        // Read data from the UART
+        int len = uart_read_bytes(port, data, BUF_SIZE, 20 / portTICK_RATE_MS);
+        if (len > 0)
+        {
+            // Null-terminate the received data
+            data[len] = '\0';
+            Serial.printf("Received %d bytes: '%s'\n", len, (char *)data);
+            if (strcmp((char *)data, "SCAN") == 0)
+            {
+                Serial.println("Scanning for devices");
+                std::vector<BleDevice> devices = ble->scanDevices(5);
+                Serial.println("Scan complete\n");
+
+                int i = 0;
+                for (const auto &dev : devices)
+                {
+                    Serial.print("Device ");
+                    Serial.println(i++);
+                    Serial.print("  Name: ");
+                    Serial.println(dev.name.c_str());
+                    Serial.print("  Address: ");
+                    Serial.println(dev.address.c_str());
+                    Serial.print("  RSSI: ");
+                    Serial.println(dev.rssi);
+                    Serial.print("  Distance: ");
+                    Serial.println(dev.distance);
+                    Serial.println("---------------------");
+                }
+
+                cJSON *root = cJSON_CreateObject();
+                cJSON *devices_array = cJSON_CreateArray();
+
+                cJSON_AddItemToObject(root, "devices", devices_array);
+
+                for (const auto &dev : devices)
+                {
+                    cJSON *dev_obj = cJSON_CreateObject();
+
+                    cJSON_AddStringToObject(dev_obj, "name", dev.name.c_str());
+                    cJSON_AddStringToObject(dev_obj, "address", dev.address.c_str());
+                    cJSON_AddNumberToObject(dev_obj, "rssi", dev.rssi);
+                    cJSON_AddNumberToObject(dev_obj, "distance", dev.distance);
+
+                    cJSON_AddItemToArray(devices_array, dev_obj);
+                }
+
+                char *json_string = cJSON_PrintUnformatted(root);
+
+                uart_write_bytes(port, json_string, strlen(json_string));
+                uart_write_bytes(port, "\n", 1);
+                
+                cJSON_Delete(root);
+                free(json_string);
+
+                // for (const auto &dev : devices)
+                // { // TODO: Trasformalo in un json
+                //     char buf[128];
+                //     snprintf(buf, sizeof(buf), "%s,%s,%d,%.2f\t",
+                //              dev.name.c_str(),
+                //              dev.address.c_str(),
+                //              dev.rssi,
+                //              dev.distance);
+                //     uart_write_bytes(port, buf, strlen(buf));
+                // }
+                // uart_write_bytes(port, "\n", strlen("\n"));
+            }
+            else if (strcmp((char *)data, "GET DISTANCE") == 0)
+            {
+                /*len = uart_read_bytes(UART_PORT_NUM, data, BUF_SIZE, 20 / portTICK_RATE_MS);
+
+                  ;*/
+            }
+            else
+            {
+                Serial.println("Unknown command received.");
+            }
+        }
+    }
+}
