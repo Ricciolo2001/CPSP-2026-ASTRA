@@ -3,6 +3,7 @@ build/
 target/
 *.o
 *.o.cmd
+*.o.d
 
 compile_commands.json
 .cache/
