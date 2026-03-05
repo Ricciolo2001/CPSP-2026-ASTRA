@@ -1,3 +1,0 @@
-cflib
-numpy
-matplotlib
