@@ -4,7 +4,7 @@
 const int MEASURED_POWER = -60;
 const float N_FACTOR = 2.5;
 
-BleManager::BleManager() : _targetAddress(""), _lastTargetDistance(-1.0) {}
+BleManager::BleManager() : _targetName(""), _lastTargetDistance(-1.0) {}
 
 void BleManager::init() {
     NimBLEDevice::init("");
@@ -22,7 +22,7 @@ float BleManager::calculateDistance(int rssi) {
 
 void BleManager::onResult(NimBLEAdvertisedDevice* advertisedDevice) {
     // Se è il dispositivo che stiamo monitorando, aggiorniamo la distanza IMMEDIATAMENTE
-    if (_targetAddress != "" && advertisedDevice->getAddress().toString() == _targetAddress) {
+    if (_targetName != "" && advertisedDevice->getName() == _targetName) {
         _lastTargetDistance = calculateDistance(advertisedDevice->getRSSI());
         _lastSeenTime = millis();
     }
@@ -46,8 +46,8 @@ std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
     return list;
 }
 
-void BleManager::setTargetDevice(std::string macAddress) {
-    _targetAddress = macAddress;
+void BleManager::setTargetDevice(std::string name) {
+    _targetName = name;
     _lastTargetDistance = -1.0;
 }
 

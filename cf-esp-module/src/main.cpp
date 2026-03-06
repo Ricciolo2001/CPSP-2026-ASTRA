@@ -30,7 +30,8 @@
 
 // !================================================
 
-BleManager ble;
+static BleManager ble;
+static UartDaemon Udaemon(UART_PORT_NUM, UART_BAUD_RATE, &ble);
 
 // =================================================
 
@@ -47,13 +48,14 @@ void setup()
   pinMode(BUILTIN_LED, OUTPUT);
   digitalWrite(BUILTIN_LED, HIGH); // LOW turns the LED on, HIGH turns it off like who designed that?
 
+  // ?This is for the oler version, if the new works please delete
   // Uart reciever task creation
-  UartTaskParams *params = new UartTaskParams;
-  params->port = UART_PORT_NUM;
-  params->baudrate = UART_BAUD_RATE;
-  params->ble = &ble;
+  // UartTaskParams *params = new UartTaskParams;
+  // params->port = UART_PORT_NUM;
+  // params->baudrate = UART_BAUD_RATE;
+  // params->ble = &ble;
 
-  xTaskCreate(uart_reciever_task, "uart_reciever_task", RECIEVER_TASK_STACK_SIZE, params, 10, NULL);
+  Udaemon.start();
 }
 
 void loop()
