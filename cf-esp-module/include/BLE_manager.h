@@ -4,6 +4,7 @@
 #include <NimBLEDevice.h>
 #include <vector>
 #include <string>
+#include <deque>
 #include "Struct/BLE_device.h"
 
 class BleManager : public NimBLEAdvertisedDeviceCallbacks
@@ -16,12 +17,13 @@ public:
     std::vector<BleDevice> scanDevices(uint32_t duration_seconds = 5);
 
     // Imposta quale dispositivo monitorare per la distanza immediata
-    void setTargetDevice(std::string name);
+    bool setTargetDevice(std::string name);
 
-    // Ritorna la distanza dell'ultimo pacchetto ricevuto o -1.0 se fuori portata
+    // Ritorna la distanza media degli ultimi 5 pacchetti ricevuti o -1.0 se fuori portata
     float getTargetDistance();
 
 protected:
+    static void runTask(void* pvParameters);
     void run();
 
 private:
@@ -30,9 +32,10 @@ private:
     float calculateDistance(int rssi);
 
     std::string _targetName;
-    float _lastTargetDistance = -1.0;
+    std::deque<int> _rssiHistory;
     unsigned long _lastSeenTime = 0;
     const uint32_t _timeoutMs = 10000; // 10 secondi per considerarlo "Out of Range"
+    bool _manualScanInProgress = false;
 };
 
 #endif

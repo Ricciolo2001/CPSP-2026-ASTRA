@@ -107,7 +107,15 @@ void UartDaemon::run()
                     Serial.println("Failed to read");
                     uart_write_bytes(_port, "Failed to read", sizeof("Failde to read"));
                 }
-                // TODO: da finire
+                else if (len > 0)
+                {
+                    _dataBuffer[len] = '\0';
+                    std::string name((char *)_dataBuffer);
+                    Serial.printf("UART: Command BIND received with name: %s\n", name.c_str());
+                    bool success = _ble->setTargetDevice(name);
+                    const char *response = success ? "BIND_SUCCESS" : "BIND_FAILED";
+                    uart_write_bytes(_port, response, strlen(response));
+                }
             }
             else if (strcmp(command, "RESET") == 0)
             {
