@@ -117,6 +117,14 @@ void UartDaemon::run()
                     uart_write_bytes(_port, response, strlen(response));
                 }
             }
+            else if (strcmp(command, "DISTANCE") == 0)
+            {
+                Serial.println("UART: Command DISTANCE received.");
+                float distance = _ble->getTargetDistance();
+                char response[32];
+                snprintf(response, sizeof(response), "DISTANCE:%.2f\n", distance);
+                uart_write_bytes(_port, response, strlen(response));
+            }
             else if (strcmp(command, "RESET") == 0)
             {
                 // Esempio di comando che resetta il demone stesso
