@@ -1,1 +1,7 @@
+---
 ColumnLimit: 120
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+  AlignCompound: true
