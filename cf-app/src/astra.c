@@ -55,7 +55,9 @@ static void uartToCrtpTask(void *params) {
 
       DEBUG_PRINT("UART2 -> CRTP: size=%" PRIu32 "\n", bytesRead);
       packet.size = (uint8_t)bytesRead;
-      crtpSendPacketBlock(&packet);
+      if (crtpSendPacketBlock(&packet) != pdPASS) {
+        DEBUG_PRINT("ERROR: Failed to send CRTP packet\n");
+      }
     }
   }
 }
@@ -94,7 +96,6 @@ void appInit(void) {
 }
 
 void appMain(void) {
-
   // Create task to forward data UART2 -> CRTP
   DEBUG_PRINT("Creating task to forward data from UART1 to CRTP ...\n");
   xTaskCreate(uartToCrtpTask, "ASTRA-E2C", ASTRA_TASK_STACK_SIZE, &astraContext, tskIDLE_PRIORITY + 1, NULL);
