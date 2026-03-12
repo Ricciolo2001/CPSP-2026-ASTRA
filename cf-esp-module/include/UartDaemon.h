@@ -1,7 +1,9 @@
 #ifndef UART_DAEMON_H
 #define UART_DAEMON_H
 
+#include <cstddef>
 #include <driver/uart.h>
+#include <memory>
 
 #include "BleManager.h"
 
@@ -15,8 +17,11 @@ class UartDaemon {
     explicit UartDaemon(uart_port_t port, int baudrate, BleManager *ble);
     ~UartDaemon();
 
+    // Start the UART daemon task
     void start(uint32_t stackSize = 4096, UBaseType_t priority = 10);
+    // Stop the UART daemon task
     void stop();
+    // Reset the UART daemon (stop + start)
     void reset();
 
   private:
@@ -26,14 +31,15 @@ class UartDaemon {
     TaskHandle_t taskHandle_; // Riferimento per gestire la task
 
     // Buffer per la ricezione
-    static const int kBufSize = 1024;
-    uint8_t *dataBuffer_;
+    static constexpr int kBufSize = 1024;
+    std::unique_ptr<uint8_t[]> dataBuffer_;
 
     // Metodi interni
     bool init(); // Configurazione hardware
     void run();  // Loop infinito
 
     static void taskWrapper(void *arg);
+    void executeCommand(const std::string &command, const std::string &args);
 };
 
 #endif // UART_DAEMON_H
