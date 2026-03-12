@@ -11,9 +11,6 @@
 #include "UartDaemon.h"
 #include "struct/UartTaskParams.h"
 
-#define UART_PORT_NUM (UART_NUM_1)
-#define UART_BAUD_RATE (115200)
-
 // !================================================
 
 /**
@@ -32,7 +29,7 @@
 // !================================================
 
 static BleManager ble;
-static UartDaemon uartDaemon{UART_PORT_NUM, UART_BAUD_RATE, &ble};
+static UartDaemon uartDaemon{UartDaemon::Config{}, &ble};
 
 // =================================================
 

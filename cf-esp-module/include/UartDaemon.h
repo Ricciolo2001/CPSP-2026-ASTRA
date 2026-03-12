@@ -1,44 +1,48 @@
 #ifndef UART_DAEMON_H
 #define UART_DAEMON_H
 
-#include <cstddef>
-#include <driver/uart.h>
 #include <memory>
+#include <string>
 
 #include "BleManager.h"
+#include "FreeRtosTask.h"
+#include "UartPort.h"
 
-#define UART_TXD_PIN (5)                  // UART TX pin
-#define UART_RXD_PIN (6)                  // UART RX pin
-#define UART_RTS_PIN (UART_PIN_NO_CHANGE) // UART RTS pin (not used)
-#define UART_CTS_PIN (UART_PIN_NO_CHANGE) // UART CTS pin (not used)
+// High-level UART daemon: owns the FreeRTOS task, implements the text-based
+// line protocol, and dispatches commands to BleManager.
+// All hardware I/O is delegated to UartPort.
+class UartDaemon : public FreeRtosTask<UartDaemon> {
+    friend class FreeRtosTask<UartDaemon>;
 
-class UartDaemon {
   public:
-    explicit UartDaemon(uart_port_t port, int baudrate, BleManager *ble);
+    struct Config {
+        uart_port_t port = UART_NUM_1;
+        uart_config_t uart = {
+            .baud_rate = 115200,
+            .data_bits = UART_DATA_8_BITS,
+            .parity = UART_PARITY_DISABLE,
+            .stop_bits = UART_STOP_BITS_1,
+            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        };
+        int txdPin = 5;
+        int rxdPin = 6;
+        int rtsPin = UART_PIN_NO_CHANGE;
+        int ctsPin = UART_PIN_NO_CHANGE;
+        uint32_t taskStackSize = 4096;
+        UBaseType_t taskPriority = 10;
+    };
+
+    explicit UartDaemon(const Config &config, BleManager *ble);
     ~UartDaemon();
 
-    // Start the UART daemon task
-    void start(uint32_t stackSize = 4096, UBaseType_t priority = 10);
-    // Stop the UART daemon task
-    void stop();
-    // Reset the UART daemon (stop + start)
-    void reset();
-
   private:
-    uart_port_t port_;
-    int baudrate_;
+    UartPort uart_;
     BleManager *ble_;
-    TaskHandle_t taskHandle_; // Riferimento per gestire la task
 
-    // Buffer per la ricezione
-    static constexpr int kBufSize = 1024;
     std::unique_ptr<uint8_t[]> dataBuffer_;
 
-    // Metodi interni
-    bool init(); // Configurazione hardware
-    void run();  // Loop infinito
-
-    static void taskWrapper(void *arg);
+    bool init();
+    void run();
     void executeCommand(const std::string &command, const std::string &args);
 };
 
