@@ -1,1 +1,23 @@
 obj-y += astra.o
+
+# Standards & Base Warnings
+ccflags-y += -std=gnu11 -O2 \
+             -Wall -Wextra -Wpedantic -Werror
+
+# Security & Safety Warnings
+ccflags-y += -Wconversion \
+             -Wshadow \
+             -Wnull-dereference \
+             -Wformat=2 -Wformat-security \
+             -Wdouble-promotion \
+             -Wundef \
+             -Wstrict-prototypes \
+             -Wunused-result \
+             -Wlogical-op \
+             -Wcast-qual \
+             -Wcast-align
+
+# Optimization Flags
+ccflags-y += -fstack-usage \
+             -fno-common \
+             -fstack-protector-strong

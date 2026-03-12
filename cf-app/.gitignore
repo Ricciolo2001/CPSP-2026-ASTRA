@@ -4,6 +4,7 @@ target/
 *.o
 *.o.cmd
 *.o.d
+*.su
 
 compile_commands.json
 .cache/
