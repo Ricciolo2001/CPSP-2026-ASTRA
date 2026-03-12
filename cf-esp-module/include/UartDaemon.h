@@ -1,18 +1,18 @@
 #ifndef UART_DAEMON_H
 #define UART_DAEMON_H
 
+#include <cJSON.h>
 #include <driver/uart.h>
-#include "BLE_manager.h"
-#include "cJSON.h"
+
+#include "BleManager.h"
 
 #define TXD_PIN (5)                  // UART TX pin
 #define RXD_PIN (6)                  // UART RX pin
 #define RTS_PIN (UART_PIN_NO_CHANGE) // UART RTS pin (not used)
 #define CTS_PIN (UART_PIN_NO_CHANGE) // UART CTS pin (not used)
 
-class UartDaemon
-{
-public:
+class UartDaemon {
+  public:
     UartDaemon(uart_port_t port, int baudrate, BleManager *ble);
     ~UartDaemon();
 
@@ -20,7 +20,7 @@ public:
     void stop();
     void reset();
 
-private:
+  private:
     uart_port_t _port;
     int _baudrate;
     BleManager *_ble;
@@ -34,11 +34,9 @@ private:
     bool init(); // Configurazione hardware
     void run();  // Loop infinito
 
-    static void taskWrapper(void *arg)
-    {
+    static void taskWrapper(void *arg) {
         UartDaemon *instance = static_cast<UartDaemon *>(arg);
-        if (instance->init())
-        { // Se l'init fallisce, non entriamo nel loop
+        if (instance->init()) { // Se l'init fallisce, non entriamo nel loop
             instance->run();
         }
         // Se run() esce, cancelliamo la task in sicurezza

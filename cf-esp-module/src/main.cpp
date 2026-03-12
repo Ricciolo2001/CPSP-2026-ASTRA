@@ -1,15 +1,15 @@
-#include <Arduino.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "Struct/UART_task_param.h"
-#include "UART_daemon.h"
-#include "BLE_manager.h"
+#include <Arduino.h>
+#include <driver/gpio.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <sdkconfig.h>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "driver/gpio.h"
-#include "sdkconfig.h"
+#include "BleManager.h"
+#include "UartDaemon.h"
+#include "struct/UartTaskParams.h"
 
 #define UART_PORT_NUM (UART_NUM_1)
 #define UART_BAUD_RATE (115200)
@@ -17,8 +17,9 @@
 // !================================================
 
 /**
- * This is an example which echos any data it receives on configured UART back to the sender,
- * with hardware flow control turned off. It does not use UART driver event queue.
+ * This is an example which echos any data it receives on configured UART back
+ * to the sender, with hardware flow control turned off. It does not use UART
+ * driver event queue.
  *
  * - Port: configured UART
  * - Receive (Rx) buffer: on
@@ -35,29 +36,32 @@ static UartDaemon Udaemon(UART_PORT_NUM, UART_BAUD_RATE, &ble);
 
 // =================================================
 
-void setup()
-{
-  Serial.begin(115200);
-  delay(1000); // Better safe than sorry?
-  Serial.println("Serial monitor setup complete.");
+void setup() {
+    Serial.begin(115200);
+    delay(1000); // Better safe than sorry?
+    Serial.println("Serial monitor setup complete.");
 
-  // BLE initial setup
-  ble.init();
-  Serial.println("BLE Manager initialized.");
+    // BLE initial setup
+    ble.init();
+    Serial.println("BLE Manager initialized.");
 
-  pinMode(BUILTIN_LED, OUTPUT);
-  digitalWrite(BUILTIN_LED, HIGH); // LOW turns the LED on, HIGH turns it off like who designed that?
+    pinMode(BUILTIN_LED, OUTPUT);
+    digitalWrite(BUILTIN_LED, HIGH); // LOW turns the LED on, HIGH turns it off
+                                     // like who designed that?
 
-  // ?This is for the oler version, if the new works please delete
-  // Uart reciever task creation
-  // UartTaskParams *params = new UartTaskParams;
-  // params->port = UART_PORT_NUM;
-  // params->baudrate = UART_BAUD_RATE;
-  // params->ble = &ble;
+    // ?This is for the oler version, if the new works please delete
+    // Uart reciever task creation
+    // UartTaskParams *params = new UartTaskParams;
+    // params->port = UART_PORT_NUM;
+    // params->baudrate = UART_BAUD_RATE;
+    // params->ble = &ble;
 
-  Udaemon.start();
+    Udaemon.start();
+
+    vTaskDelete(NULL); // Delete the default loop task, we don't need it
 }
 
-void loop()
-{
+void loop() {
+    // Never gets called, we delete the loop task in setup() after creating the
+    // UART task
 }
