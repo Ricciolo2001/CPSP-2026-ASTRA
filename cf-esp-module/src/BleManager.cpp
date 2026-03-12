@@ -1,5 +1,8 @@
 #include "BleManager.h"
 
+#include "FreeRtosMutex.h"
+#include <mutex>
+
 const int MEASURED_POWER = -60;
 const float N_FACTOR = 2.5;
 
@@ -9,7 +12,7 @@ const float N_FACTOR = 2.5;
 // condensatori) quindi non avremo risultati solidi... ! Nell'AI deck invece c'è
 // un RF matching fatto bene, e un bellissimo shield per le interferenze...
 
-BleManager::BleManager() : _targetName(""), _rssiHistory() {}
+BleManager::BleManager() : _targetName(""), _rssiHistory(), _mutex() {}
 
 void BleManager::init() {
     NimBLEDevice::init("");
@@ -30,6 +33,8 @@ float BleManager::calculateDistance(int rssi) {
 }
 
 void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
+    std::lock_guard<FreeRtosMutex> lock(_mutex);
+
     // Se è il dispositivo che stiamo monitorando, aggiorniamo la storia RSSI
     if (_targetName != "" && advertisedDevice->getName() == _targetName) {
         _rssiHistory.push_back(advertisedDevice->getRSSI());
@@ -40,16 +45,22 @@ void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
 }
 
 std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
-    // Stopping scanning task
-    _manualScanInProgress = true;
-    delay(1000);
-
-    // Start scanning
     NimBLEScan *pScan = NimBLEDevice::getScan();
+
+    pScan->stop(); // Stop the background scan
+
+    {
+        std::lock_guard<FreeRtosMutex> lock(_mutex);
+        _manualScanInProgress = true;
+    }
+
+    // Start the manual scan
     NimBLEScanResults results = pScan->start(duration_seconds, false);
 
-    // End of manual scanning, resume background task
-    _manualScanInProgress = false;
+    {
+        std::lock_guard<FreeRtosMutex> lock{_mutex};
+        _manualScanInProgress = false;
+    }
 
     // Data to send back to caller
     std::vector<BleDevice> list;
@@ -64,6 +75,8 @@ std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
 }
 
 bool BleManager::setTargetDevice(std::string name) {
+    std::lock_guard<FreeRtosMutex> lock(_mutex);
+
     // TODO: Look if the device exist!
     _targetName = name;
     _rssiHistory.clear();
@@ -71,11 +84,13 @@ bool BleManager::setTargetDevice(std::string name) {
 }
 
 float BleManager::getTargetDistance() {
+    std::lock_guard<FreeRtosMutex> lock(_mutex);
     // Se non abbiamo almeno 5 misurazioni o è passato troppo tempo, fuori
     // portata
     if (_rssiHistory.size() < 5 || millis() - _lastSeenTime > _timeoutMs) {
         return -1.0;
     }
+
     // Calcola la media delle ultime 5 distanze
     float sum = 0.0;
     for (int rssi : _rssiHistory) {
@@ -91,7 +106,12 @@ void BleManager::runTask(void *pvParameters) {
 
 void BleManager::run() {
     while (true) {
-        if (!_manualScanInProgress) {
+        bool pause = false;
+        {
+            std::lock_guard<FreeRtosMutex> lock(_mutex);
+            pause = _manualScanInProgress;
+        }
+        if (!pause) {
             NimBLEDevice::getScan()->start(1, false); // Scan for one second
         }
         vTaskDelay(100 / portTICK_PERIOD_MS); // Pausa di 100ms

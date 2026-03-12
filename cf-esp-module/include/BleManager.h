@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "struct/BleDevice.h"
+#include "FreeRtosMutex.h"
 
 class BleManager : public NimBLEAdvertisedDeviceCallbacks {
   public:
@@ -33,11 +34,14 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice *advertisedDevice) override;
     float calculateDistance(int rssi);
 
+    FreeRtosMutex _mutex; // Protects _targetName, _rssiHistory,
+                              // _lastSeenTime, _manualScanInProgress
+
     std::string _targetName;
     std::deque<int> _rssiHistory;
     unsigned long _lastSeenTime = 0;
-    const uint32_t _timeoutMs =
-        10000; // 10 secondi per considerarlo "Out of Range"
+    // 10 secondi per considerarlo "Out of Range"
+    const uint32_t _timeoutMs = 10000;
     bool _manualScanInProgress = false;
 };
 
