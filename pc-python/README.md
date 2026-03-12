@@ -8,25 +8,6 @@ This module handles:
 - telemetry logging to CSV
 - offline beacon localization from a CSV log
 
-## Folder structure
-
-```text
-pc-python/
-├── astra/
-│   ├── __init__.py
-│   ├── protocol.py
-│   ├── crazyflie_link.py
-│   ├── io.py
-│   ├── localization.py
-│   └── rssi.py
-├── scripts/
-│   ├── log_csv.py
-│   ├── localize_csv.py
-│   └── receive_appchannel.py
-├── README.md
-└── requirements.txt
-```
-
 ## Packet format
 
 Current packet format is aligned with the placeholder already present in the repository:
@@ -86,16 +67,4 @@ Example:
 ```bash
 python scripts/localize_csv.py telemetry_log.csv --tx-power -62 --path-loss 2.3 --plot
 ```
-
-## Notes for repository integration
-
-This version is designed to fit directly into the current repository structure:
-- it keeps `astra/__init__.py`
-- it replaces the placeholder `astra/protocol.py`
-- it keeps and improves `scripts/receive_appchannel.py`
-- it keeps and improves `scripts/log_csv.py`
-- it adds the missing modules needed for filtering and localization
-
-## Recommended next check with the team
-
 Before testing on the real drone, verify that the Crazyflie firmware really sends packets in the format `<fffhH`. If not, only `astra/protocol.py` must be updated.
