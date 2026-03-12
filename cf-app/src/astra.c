@@ -1,13 +1,19 @@
+#include <assert.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+
+// Suppress warnings about missing prototypes in firmware headers
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-prototypes"
 
 #include "FreeRTOSConfig.h"
 #include "app.h"
 
 #include "FreeRTOS.h" // IWYU pragma: keep
 #include "crtp.h"
+#include "projdefs.h"
 #include "queue.h"
 #include "task.h"
 #include "uart2.h"
@@ -15,107 +21,89 @@
 #define DEBUG_MODULE "ASTRA"
 #include "debug.h"
 
-// Baudrate for UART2 communication with ESP32
-#define ASTRA_UART2_BAUDRATE 115200
+#pragma GCC diagnostic pop
 
-// CRTP port for ESP32 communication
-#define ASTRA_CRTP_PORT 0x0E
+#define ASTRA_UART2_BAUDRATE         115200  // Baudrate for UART2 communication with ESP32
+#define ASTRA_UART2_POLLING_INTERVAL M2T(10) // 10 ms
+#define ASTRA_CRTP_PORT              0x0E    // CRTP port used for communication with ESP32
+#define ASTRA_QUEUE_LEN              10      // Length of the queue for CRTP <-> UART2 communication
+#define ASTRA_TASK_STACK_SIZE        128     // Stack size for the FreeRTOS tasks (in words, not bytes)
 
-// Delay in ticks for the UART polling task
-#define ASTRA_ESP32_UART_POLLING_INTERVAL M2T(10) // 10 ms
+typedef struct {
+  uint8_t crtpPort;
+} AstraContext_t;
 
-static xQueueHandle esp32Queue;
+// Persistent context for the lifetime of the tasks
+static AstraContext_t astraContext;
 
-// This function is called by the CRTP handler when a packet is received on the ESP32 port.
-void crtpPortEsp32Handler(CRTPPacket *packet) { xQueueSend(esp32Queue, packet, 0); }
+/**
+ * Task: UART2 -> CRTP
+ */
+static void uartToCrtpTask(void *params) {
+  const AstraContext_t *ctx = (const AstraContext_t *)params;
+  const uint32_t debounceTicks = M2T(10); // 10 ms debounce
 
-// Task to read CRTP packets from the queue and send them to UART2
-// This task is NOT thread safe.
-void crtpToEsp32Task(void *params) {
-  (void)params;
-
-  static CRTPPacket packet;
+  CRTPPacket packet = {.header = (uint8_t)CRTP_HEADER(ctx->crtpPort, 0)};
 
   while (true) {
-    if (xQueueReceive(esp32Queue, &packet, portMAX_DELAY) == pdPASS) {
+    // Read data from UART2
+    int32_t bytesRead = uart2GetDataWithTimeout(sizeof(packet.data), packet.data, debounceTicks);
+
+    // If we read any data, send it as a CRTP packet
+    if (bytesRead > 0) {
+      ASSERT((uint32_t)bytesRead <= sizeof(packet.data)); // Ensure we don't overflow the packet data buffer
+
+      DEBUG_PRINT("UART2 -> CRTP: size=%" PRIu32 "\n", bytesRead);
+      packet.size = (uint8_t)bytesRead;
+      crtpSendPacketBlock(&packet);
+    }
+  }
+}
+
+/**
+ * Task: CRTP -> UART2
+ */
+static void crtpToUartTask(void *params) {
+  const AstraContext_t *ctx = (const AstraContext_t *)params;
+  CRTPPacket packet;
+
+  while (true) {
+    // Wait for a CRTP packet to be received on the specified port
+    if (crtpReceivePacketBlock(ctx->crtpPort, &packet) == pdPASS) {
+      // If we received a packet, send its data over UART2
       DEBUG_PRINT("CRTP -> UART2: size=%" PRIu8 "\n", packet.size);
       uart2SendData(packet.size, packet.data);
     }
   }
 }
 
-// Task to read data from UART2 and send it as CRTP packets
-// This task is NOT thread safe.
-void esp32ToCrtpTask(void *params) {
+void appInit(void) {
+  astraContext = (AstraContext_t){
+      .crtpPort = ASTRA_CRTP_PORT,
+  };
 
-  static CRTPPacket packet;
-
-  const uint32_t maxDataSize = sizeof(packet.data);
-  const uint32_t port = ASTRA_CRTP_PORT;
-  const uint32_t channel = 0;
-  const uint32_t timeoutTicks = ASTRA_ESP32_UART_POLLING_INTERVAL;
-
-  while (true) {
-    uint32_t bytesRead = uart2GetDataWithTimeout(maxDataSize, packet.data, timeoutTicks);
-
-    if (bytesRead > 0) {
-      DEBUG_PRINT("UART2 -> CRTP: size=%" PRIu32 "\n", bytesRead);
-
-      // Read data from UART2 and send it as a CRTP packet
-      packet.size = bytesRead;
-      packet.header = CRTP_HEADER(port, channel);
-
-      // We use block because otherwise we'd have to malloc the packet,
-      // otherwise we'd have a dangling pointer in the queue as soon as
-      // we return from this function.
-      crtpSendPacketBlock(&packet);
-    }
-
-    // Yield to allow other tasks to run
-    taskYIELD(); // NOLINT(clang-analyzer-core.FixedAddressDereference)
+  // Initialize UART2
+  const uint32_t uart2Baudrate = ASTRA_UART2_BAUDRATE;
+  DEBUG_PRINT("Initializing UART2 ...\n");
+  uart2Init(uart2Baudrate);
+  if (!uart2Test()) {
+    DEBUG_PRINT("ERROR: Failed to initialize UART2\n");
+    return;
   }
+  DEBUG_PRINT("UART2 initialized with baudrate %" PRId32 "\n", uart2Baudrate);
 }
 
-void appMain() {
-  DEBUG_PRINT("Waiting for activation ...\n");
+void appMain(void) {
 
-  { // Initialize UART2
-    DEBUG_PRINT("Initializing UART2 ...\n");
-    const uint32_t baudrate = ASTRA_UART2_BAUDRATE;
-    uart2Init(baudrate);
-    if (!uart2Test()) {
-      DEBUG_PRINT("ERROR: Failed to initialize UART2\n");
-      return;
-    }
-    DEBUG_PRINT("UART2 initialized with baudrate %" PRId32 "\n", baudrate);
-  }
+  // Create task to forward data UART2 -> CRTP
+  DEBUG_PRINT("Creating task to forward data from UART1 to CRTP ...\n");
+  xTaskCreate(uartToCrtpTask, "ASTRA-E2C", ASTRA_TASK_STACK_SIZE, &astraContext, tskIDLE_PRIORITY + 1, NULL);
+  DEBUG_PRINT("Task to forward data from UART1 to CRTP created\n");
 
-  { // Create queue for CRTP <-> UART2 communication
-    esp32Queue = xQueueCreate(10, sizeof(CRTPPacket));
-    if (esp32Queue == NULL) {
-      DEBUG_PRINT("ERROR: Failed to create queue for ESP32 communication\n");
-      return;
-    }
-  }
-
-  { // Register CRTP handler
-    const int32_t crtpPort = ASTRA_CRTP_PORT;
-    DEBUG_PRINT("Registering CRTP handler for ESP32 ...\n");
-    crtpRegisterPortCB(crtpPort, crtpPortEsp32Handler);
-    DEBUG_PRINT("CRTP handler for ESP32 registered on port %" PRId32 "\n", crtpPort);
-  }
-
-  { // Create task to forward data from UART2 to CRTP
-    DEBUG_PRINT("Creating task to forward data from UART1 to CRTP ...\n");
-    xTaskCreate(esp32ToCrtpTask, "ASTRA-E2C", 512, NULL, tskIDLE_PRIORITY + 1, NULL);
-    DEBUG_PRINT("Task to forward data from UART1 to CRTP created\n");
-  }
-
-  { // Create task to forward data from CRTP to UART2
-    DEBUG_PRINT("Creating task to forward data from CRTP to UART1 ...\n");
-    xTaskCreate(crtpToEsp32Task, "ASTRA-C2E", 512, NULL, tskIDLE_PRIORITY + 1, NULL);
-    DEBUG_PRINT("Task to forward data from CRTP to UART1 created\n");
-  }
+  // Create task to forward data CRTP -> UART2
+  DEBUG_PRINT("Creating task to forward data from CRTP to UART1 ...\n");
+  xTaskCreate(crtpToUartTask, "ASTRA-C2E", ASTRA_TASK_STACK_SIZE, &astraContext, tskIDLE_PRIORITY + 1, NULL);
+  DEBUG_PRINT("Task to forward data from CRTP to UART1 created\n");
 
   DEBUG_PRINT("Initialization complete. Goodbye!\n");
   vTaskDelete(NULL); // Delete the main task since we don't need it anymore
