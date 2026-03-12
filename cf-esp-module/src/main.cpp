@@ -32,7 +32,7 @@
 // !================================================
 
 static BleManager ble;
-static UartDaemon Udaemon(UART_PORT_NUM, UART_BAUD_RATE, &ble);
+static UartDaemon uartDaemon{UART_PORT_NUM, UART_BAUD_RATE, &ble};
 
 // =================================================
 
@@ -56,7 +56,7 @@ void setup() {
     // params->baudrate = UART_BAUD_RATE;
     // params->ble = &ble;
 
-    Udaemon.start();
+    uartDaemon.start();
 
     vTaskDelete(NULL); // Delete the default loop task, we don't need it
 }
