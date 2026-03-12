@@ -6,10 +6,14 @@
 #include <string>
 #include <vector>
 
-#include "struct/BleDevice.h"
 #include "FreeRtosMutex.h"
+#include "FreeRtosTask.h"
+#include "struct/BleDevice.h"
 
-class BleManager : public NimBLEAdvertisedDeviceCallbacks {
+class BleManager : public NimBLEAdvertisedDeviceCallbacks,
+                   public FreeRtosTask<BleManager> {
+    friend class FreeRtosTask<BleManager>;
+
   public:
     BleManager();
     void init();
@@ -24,8 +28,7 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     // fuori portata
     float getTargetDistance();
 
-  protected:
-    static void runTask(void *pvParameters);
+  private:
     void run();
 
   private:
@@ -35,7 +38,7 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     float calculateDistance(int rssi);
 
     FreeRtosMutex _mutex; // Protects _targetName, _rssiHistory,
-                              // _lastSeenTime, _manualScanInProgress
+                          // _lastSeenTime, _manualScanInProgress
 
     std::string _targetName;
     std::deque<int> _rssiHistory;

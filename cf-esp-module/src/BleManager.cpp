@@ -12,7 +12,9 @@ const float N_FACTOR = 2.5;
 // condensatori) quindi non avremo risultati solidi... ! Nell'AI deck invece c'è
 // un RF matching fatto bene, e un bellissimo shield per le interferenze...
 
-BleManager::BleManager() : _targetName(""), _rssiHistory(), _mutex() {}
+BleManager::BleManager()
+    : FreeRtosTask<BleManager>({"BLEScan", 4096, 1}),
+      _targetName(""), _rssiHistory(), _mutex() {}
 
 void BleManager::init() {
     NimBLEDevice::init("");
@@ -22,8 +24,7 @@ void BleManager::init() {
     pScan->setInterval(45); // Più veloce per non perdere pacchetti
     pScan->setWindow(15);
 
-    // Avvia il task per scansione continua
-    xTaskCreate(runTask, "BLEScan", 4096, this, 1, NULL);
+    start();  // launch the continuous background scan task
 }
 
 float BleManager::calculateDistance(int rssi) {
@@ -99,13 +100,8 @@ float BleManager::getTargetDistance() {
     return sum / 5.0;
 }
 
-void BleManager::runTask(void *pvParameters) {
-    BleManager *manager = static_cast<BleManager *>(pvParameters);
-    manager->run();
-}
-
 void BleManager::run() {
-    while (true) {
+    while (running_.load(std::memory_order_relaxed)) {
         bool pause = false;
         {
             std::lock_guard<FreeRtosMutex> lock(_mutex);
