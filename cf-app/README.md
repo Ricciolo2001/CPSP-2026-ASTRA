@@ -1,5 +1,21 @@
-# Hello world App for Crazyflie 2.x
+# ASTRA - CRTP-UART bridge app
 
-This folder contains the app layer application for the Crazyflie to print a hello world debug message, which can be read in the console tab of the [cfclient](https://github.com/bitcraze/crazyflie-clients-python). 
+This CrazyFlie app implements a bridge between the CrazyRadio Transceiver Protocol (CRTP) and a UART interface. It allows communication between a Crazyflie drone and an external device via UART, enabling control and data exchange.
 
-See App layer API guide and build instructions [here](https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/userguides/app_layer/)
+## Building the App
+
+The app uses the CrazyFlie Kbuild system.
+
+To build the app, use Make:
+
+```bash
+make -j4
+```
+
+## Flashing the App
+
+After building, you can flash the app to your Crazyflie drone using the following command:
+
+```bash
+cfloader flash build/cf2.bin stm32-fw
+```
