@@ -24,7 +24,9 @@
 #define ASTRA_UART2_POLLING_INTERVAL M2T(10) // 10 ms
 #define ASTRA_CRTP_PORT              0x0E    // CRTP port used for communication with ESP32
 
-void appInit(void) {
+void appMain(void) {
+  DEBUG_PRINT("Initializing ASTRA application...\n");
+
   // Initialize UART2
   const uint32_t uart2Baudrate = ASTRA_UART2_BAUDRATE;
   DEBUG_PRINT("Initializing UART2 ...\n");
@@ -34,9 +36,7 @@ void appInit(void) {
     return;
   }
   DEBUG_PRINT("UART2 initialized with baudrate %" PRId32 "\n", uart2Baudrate);
-}
 
-void appMain(void) {
   CrtpUartBridgeConfig_t bridgeConfig = {
       .crtpPort = ASTRA_CRTP_PORT,
       .uartDebounceMs = ASTRA_UART2_POLLING_INTERVAL / M2T(1), // Convert polling interval from ticks to ms

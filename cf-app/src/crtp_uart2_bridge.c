@@ -19,6 +19,9 @@
 
 #pragma GCC diagnostic pop
 
+static TaskHandle_t uartToCrtpTaskHandle = NULL;
+static TaskHandle_t crtpToUartTaskHandle = NULL;
+
 /**
  * Task: UART2 -> CRTP
  */
@@ -36,10 +39,10 @@ static void uartToCrtpTask(void *params) {
     if (bytesRead > 0) {
       ASSERT((uint32_t)bytesRead <= sizeof(packet.data)); // Ensure we don't overflow the packet data buffer
 
-      DEBUG_PRINT("UART2 -> CRTP: size=%" PRIu32 "\n", bytesRead);
+      DEBUG_PRINT("UART2 -> CRTP: size=%d\n", (int)bytesRead);
       packet.size = (uint8_t)bytesRead;
-      if (crtpSendPacketBlock(&packet) != pdPASS) {
-        DEBUG_PRINT("ERROR: Failed to send CRTP packet\n");
+      if (crtpSendPacket(&packet) != pdPASS) {
+        DEBUG_PRINT("WARN: CRTP send failed for packet of size %u\n", (unsigned int)packet.size);
       }
     }
   }
@@ -56,20 +59,41 @@ static void crtpToUartTask(void *params) {
     // Wait for a CRTP packet to be received on the specified port
     if (crtpReceivePacketBlock(ctx->crtpPort, &packet) == pdPASS) {
       // If we received a packet, send its data over UART2
-      DEBUG_PRINT("CRTP -> UART2: size=%" PRIu8 "\n", packet.size);
+      DEBUG_PRINT("CRTP -> UART2: size=%u\n", (unsigned int)packet.size);
       uart2SendData(packet.size, packet.data);
     }
   }
 }
 
 void crtpUartBridgeInit(CrtpUartBridgeConfig_t *const config) {
+  DEBUG_PRINT("Creating CRTP queue ... \n");
+  crtpInitTaskQueue(config->crtpPort);
+
   // Create task to forward data UART2 -> CRTP
   DEBUG_PRINT("Creating task to forward data from UART2 to CRTP ...\n");
-  xTaskCreate(uartToCrtpTask, "CRTP_UART2_BRIDGE-U2C", configMINIMAL_STACK_SIZE, config, tskIDLE_PRIORITY + 1, NULL);
+  xTaskCreate(uartToCrtpTask, "ASTRA-U2C", configMINIMAL_STACK_SIZE, config, tskIDLE_PRIORITY + 1,
+              &uartToCrtpTaskHandle);
   DEBUG_PRINT("Task to forward data from UART2 to CRTP created\n");
 
   // Create task to forward data CRTP -> UART2
   DEBUG_PRINT("Creating task to forward data from CRTP to UART2 ...\n");
-  xTaskCreate(crtpToUartTask, "CRTP_UART2_BRIDGE-C2U", configMINIMAL_STACK_SIZE, config, tskIDLE_PRIORITY + 1, NULL);
+  xTaskCreate(crtpToUartTask, "ASTRA-C2U", configMINIMAL_STACK_SIZE, config, tskIDLE_PRIORITY + 1,
+              &crtpToUartTaskHandle);
   DEBUG_PRINT("Task to forward data from CRTP to UART2 created\n");
+}
+
+void crtpUartBridgeDeinit(void) {
+  // Delete the UART2 -> CRTP task
+  if (uartToCrtpTaskHandle != NULL) {
+    vTaskDelete(uartToCrtpTaskHandle);
+    uartToCrtpTaskHandle = NULL;
+    DEBUG_PRINT("UART2 -> CRTP task deleted\n");
+  }
+
+  // Delete the CRTP -> UART2 task
+  if (crtpToUartTaskHandle != NULL) {
+    vTaskDelete(crtpToUartTaskHandle);
+    crtpToUartTaskHandle = NULL;
+    DEBUG_PRINT("CRTP -> UART2 task deleted\n");
+  }
 }
