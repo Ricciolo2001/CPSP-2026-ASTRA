@@ -4,7 +4,7 @@
 #include <cJSON.h>
 
 UartDaemon::UartDaemon(const Config &config, BleManager *ble)
-    : FreeRtosTask<UartDaemon>(
+    : freertos::Task<UartDaemon>(
           {"uart_daemon_task", config.taskStackSize, config.taskPriority}),
       uart_({config.port, config.uart, config.txdPin, config.rxdPin,
              config.rtsPin, config.ctsPin}),

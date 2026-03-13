@@ -1,7 +1,9 @@
 #include "BleManager.h"
 
-#include "FreeRtosMutex.h"
 #include <mutex>
+
+#include "freertos/mutex.hpp"
+#include "freertos/task.hpp"
 
 const int MEASURED_POWER = -60;
 const float N_FACTOR = 2.5;
@@ -13,8 +15,8 @@ const float N_FACTOR = 2.5;
 // un RF matching fatto bene, e un bellissimo shield per le interferenze...
 
 BleManager::BleManager()
-    : FreeRtosTask<BleManager>({"BLEScan", 4096, 1}),
-      _targetName(""), _rssiHistory(), _mutex() {}
+    : freertos::Task<BleManager>({"BLEScan", 4096, 1}), _targetName(""),
+      _rssiHistory(), _mutex() {}
 
 void BleManager::init() {
     NimBLEDevice::init("");
@@ -24,7 +26,7 @@ void BleManager::init() {
     pScan->setInterval(45); // Più veloce per non perdere pacchetti
     pScan->setWindow(15);
 
-    start();  // launch the continuous background scan task
+    start(); // launch the continuous background scan task
 }
 
 float BleManager::calculateDistance(int rssi) {
@@ -34,7 +36,7 @@ float BleManager::calculateDistance(int rssi) {
 }
 
 void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
-    std::lock_guard<FreeRtosMutex> lock(_mutex);
+    std::lock_guard lock(_mutex);
 
     // Se è il dispositivo che stiamo monitorando, aggiorniamo la storia RSSI
     if (_targetName != "" && advertisedDevice->getName() == _targetName) {
@@ -51,7 +53,7 @@ std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
     pScan->stop(); // Stop the background scan
 
     {
-        std::lock_guard<FreeRtosMutex> lock(_mutex);
+        std::lock_guard lock(_mutex);
         _manualScanInProgress = true;
     }
 
@@ -59,7 +61,7 @@ std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
     NimBLEScanResults results = pScan->start(duration_seconds, false);
 
     {
-        std::lock_guard<FreeRtosMutex> lock{_mutex};
+        std::lock_guard lock{_mutex};
         _manualScanInProgress = false;
     }
 
@@ -76,7 +78,7 @@ std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
 }
 
 bool BleManager::setTargetDevice(std::string name) {
-    std::lock_guard<FreeRtosMutex> lock(_mutex);
+    std::lock_guard lock(_mutex);
 
     // TODO: Look if the device exist!
     _targetName = name;
@@ -85,7 +87,7 @@ bool BleManager::setTargetDevice(std::string name) {
 }
 
 float BleManager::getTargetDistance() {
-    std::lock_guard<FreeRtosMutex> lock(_mutex);
+    std::lock_guard lock(_mutex);
     // Se non abbiamo almeno 5 misurazioni o è passato troppo tempo, fuori
     // portata
     if (_rssiHistory.size() < 5 || millis() - _lastSeenTime > _timeoutMs) {
@@ -104,7 +106,7 @@ void BleManager::run() {
     while (running_.load(std::memory_order_relaxed)) {
         bool pause = false;
         {
-            std::lock_guard<FreeRtosMutex> lock(_mutex);
+            std::lock_guard lock(_mutex);
             pause = _manualScanInProgress;
         }
         if (!pause) {

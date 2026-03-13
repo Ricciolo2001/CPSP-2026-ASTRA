@@ -1,8 +1,11 @@
 #pragma once
 
 #include <atomic>
+
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+
+namespace freertos {
 
 /// CRTP base that provides a safe FreeRTOS task lifecycle.
 ///
@@ -22,7 +25,7 @@
 ///
 /// From inside run():
 ///   requestRestart() — exit run() and restart cleanly, avoids self-deletion
-template <typename Derived> class FreeRtosTask {
+template <typename Derived> class Task {
   public:
     struct TaskConfig {
         const char *name = "task";
@@ -59,7 +62,7 @@ template <typename Derived> class FreeRtosTask {
     bool isRunning() const { return taskHandle_ != NULL; }
 
   protected:
-    explicit FreeRtosTask(TaskConfig cfg) : cfg_(std::move(cfg)) {}
+    explicit Task(TaskConfig cfg) : cfg_(std::move(cfg)) {}
 
     /// Call from inside run() to request a clean restart without self-deletion.
     /// Sets running_=false so the loop exits; taskEntry then calls run() again.
@@ -87,3 +90,5 @@ template <typename Derived> class FreeRtosTask {
     TaskHandle_t taskHandle_ = NULL;
     std::atomic<bool> restartRequested_ = {false};
 };
+
+} // namespace freertos

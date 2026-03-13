@@ -5,14 +5,14 @@
 #include <string>
 
 #include "BleManager.h"
-#include "FreeRtosTask.h"
+#include "freertos/task.hpp"
 #include "UartPort.h"
 
 // High-level UART daemon: owns the FreeRTOS task, implements the text-based
 // line protocol, and dispatches commands to BleManager.
 // All hardware I/O is delegated to UartPort.
-class UartDaemon : public FreeRtosTask<UartDaemon> {
-    friend class FreeRtosTask<UartDaemon>;
+class UartDaemon : public freertos::Task<UartDaemon> {
+    friend class freertos::Task<UartDaemon>;
 
   public:
     struct Config {
