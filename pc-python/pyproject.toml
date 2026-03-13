@@ -1,8 +1,12 @@
 [project]
 name = "pc-python"
 version = "0.1.0"
+requires-python = ">= 3.11"
 dependencies = [
-    "cflib>=0.1.31",
-    "matplotlib>=3.10.8",
-    "numpy>=2.4.2",
+  "cflib>=0.1.31",
+  "matplotlib>=3.10.8",
+  "numpy>=2.4.2",
 ]
+
+[project.scripts]
+astra = "astra.__main__:main"
