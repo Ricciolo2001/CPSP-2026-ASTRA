@@ -40,6 +40,8 @@ void setup() {
 
     // BLE initial setup
     ble.init();
+    ble.start(); // launch the continuous background scan task
+
     Serial.println("BLE Manager initialized.");
 
     pinMode(BUILTIN_LED, OUTPUT);

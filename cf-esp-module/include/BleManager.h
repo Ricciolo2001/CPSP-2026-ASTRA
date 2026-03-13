@@ -35,7 +35,6 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks,
     // Callback di NimBLE: chiamata ogni volta che un pacchetto arriva
     // nell'etere
     void onResult(NimBLEAdvertisedDevice *advertisedDevice) override;
-    float calculateDistance(int rssi);
 
     // Protects _targetName, _rssiHistory, _lastSeenTime, _manualScanInProgress
     freertos::Mutex _mutex;

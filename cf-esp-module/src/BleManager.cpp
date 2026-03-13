@@ -8,6 +8,14 @@
 const int MEASURED_POWER = -60;
 const float N_FACTOR = 2.5;
 
+namespace {
+float calculateDistance(int rssi) {
+    if (rssi == 0)
+        return -1.0;
+    return pow(10, (float)(MEASURED_POWER - rssi) / (10 * N_FACTOR));
+}
+} // namespace
+
 // ! Da calibrare per il singolo sensore, guardare una guida su come fare (la
 // calibrazione andrebbe fatta ad un metro di distnaza) ! Ovviamente le board
 // che usiamo sono merdose, no shielding e no rf matching (catena di induttori e
@@ -25,26 +33,23 @@ void BleManager::init() {
     pScan->setActiveScan(true);
     pScan->setInterval(45); // Più veloce per non perdere pacchetti
     pScan->setWindow(15);
-
-    start(); // launch the continuous background scan task
-}
-
-float BleManager::calculateDistance(int rssi) {
-    if (rssi == 0)
-        return -1.0;
-    return pow(10, (float)(MEASURED_POWER - rssi) / (10 * N_FACTOR));
 }
 
 void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
     std::lock_guard lock(_mutex);
 
-    // Se è il dispositivo che stiamo monitorando, aggiorniamo la storia RSSI
-    if (_targetName != "" && advertisedDevice->getName() == _targetName) {
-        _rssiHistory.push_back(advertisedDevice->getRSSI());
-        if (_rssiHistory.size() > 5)
-            _rssiHistory.pop_front();
-        _lastSeenTime = millis();
+    if (_targetName == "" || advertisedDevice->getName() != _targetName) {
+        // If it's not the device we're monitoring, ignore it
+        return;
     }
+
+    // Update RSSI history and last seen time
+    _rssiHistory.push_back(advertisedDevice->getRSSI());
+    if (_rssiHistory.size() > 5) {
+        _rssiHistory.pop_front();
+    }
+
+    _lastSeenTime = millis();
 }
 
 std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
