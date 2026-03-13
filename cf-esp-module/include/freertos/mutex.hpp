@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <chrono>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -9,13 +10,13 @@ namespace freertos {
 
 class Mutex {
   public:
-    explicit Mutex() : mutex_(xSemaphoreCreateMutex()) {
+    inline explicit Mutex() : mutex_(xSemaphoreCreateMutex()) {
         if (mutex_ == nullptr) {
             throw std::runtime_error("Failed to create FreeRTOS mutex");
         }
     }
 
-    ~Mutex() {
+    inline ~Mutex() {
         if (mutex_ != nullptr) {
             vSemaphoreDelete(mutex_);
         }
@@ -25,16 +26,24 @@ class Mutex {
     Mutex(const Mutex &) = delete;
     Mutex &operator=(const Mutex &) = delete;
 
-    // Blocks until the mutex is obtained
-    void lock() { xSemaphoreTake(mutex_, portMAX_DELAY); }
+    inline void lock(TickType_t timeout) {
+        if (xSemaphoreTake(mutex_, timeout) != pdTRUE) {
+            throw std::runtime_error(
+                "Failed to acquire FreeRTOS mutex within timeout");
+        }
+    }
+    inline void lock() { lock(portMAX_DELAY); }
+    inline void lock(std::chrono::milliseconds timeout) {
+        lock(static_cast<TickType_t>(timeout.count() / portTICK_PERIOD_MS));
+    }
 
-    void unlock() {
+    inline void unlock() {
         if (xSemaphoreGive(mutex_)) {
             // something went wrong, TODO: handle error
         }
     }
 
-    bool try_lock() { return xSemaphoreTake(mutex_, 0) == pdTRUE; }
+    inline bool try_lock() { return xSemaphoreTake(mutex_, 0) == pdTRUE; }
 
   private:
     SemaphoreHandle_t mutex_;
