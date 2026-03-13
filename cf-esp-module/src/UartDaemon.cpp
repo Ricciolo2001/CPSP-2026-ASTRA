@@ -1,6 +1,7 @@
 #include "UartDaemon.h"
 
 #include <Arduino.h>
+#include <cstring>
 #include <cJSON.h>
 
 UartDaemon::UartDaemon(const Config &config, BleManager *ble)
@@ -87,7 +88,8 @@ void UartDaemon::executeCommand(const std::string &command,
             cJSON_AddItemToArray(array, d);
         }
         char *json = cJSON_PrintUnformatted(root);
-        uart_.write(json, strlen(json));
+
+        uart_.write(json, std::strlen(json));
         uart_.write("\n");
 
         free(json);
