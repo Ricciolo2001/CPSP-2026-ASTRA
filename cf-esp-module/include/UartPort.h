@@ -1,8 +1,10 @@
 #ifndef UART_PORT_H
 #define UART_PORT_H
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
 
@@ -38,11 +40,21 @@ class UartPort {
     // Read up to maxLen bytes into buf; blocks for at most timeout ticks.
     // Returns the number of bytes read, or -1 on error.
     int read(uint8_t *buf, size_t maxLen, TickType_t timeout);
+    int read(uint8_t *buf, size_t maxLen, std::chrono::milliseconds timeout) {
+        return read(
+            buf, maxLen,
+            static_cast<TickType_t>(timeout.count() / portTICK_PERIOD_MS));
+    }
+    int read(uint8_t *buf, size_t maxLen) {
+        return read(buf, maxLen, portMAX_DELAY);
+    }
 
     // Write len bytes from data to the UART TX.
     void write(const void *data, size_t len);
-    // Write a null-terminated string to the UART TX.
-    void write(const char *str);
+    // Write a std::string to the UART TX.
+    inline void write(const std::string &str) {
+        write(str.c_str(), str.size());
+    }
 
   private:
     Config config_;

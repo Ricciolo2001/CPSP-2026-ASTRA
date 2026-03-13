@@ -48,7 +48,3 @@ int UartPort::read(uint8_t *buf, size_t maxLen, TickType_t timeout) {
 void UartPort::write(const void *data, size_t len) {
     uart_write_bytes(config_.port, data, len);
 }
-
-void UartPort::write(const char *str) {
-    uart_write_bytes(config_.port, str, strlen(str));
-}
