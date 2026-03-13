@@ -42,9 +42,13 @@ void UartPort::deinit() {
 }
 
 int UartPort::read(uint8_t *buf, size_t maxLen, TickType_t timeout) {
+    assert(initialized_);
+    assert(buf != nullptr);
     return uart_read_bytes(config_.port, buf, maxLen, timeout);
 }
 
 void UartPort::write(const void *data, size_t len) {
+    assert(initialized_);
+    assert(data != nullptr);
     uart_write_bytes(config_.port, data, len);
 }

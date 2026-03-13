@@ -4,9 +4,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
+#include <string>
 
 // Thin RAII wrapper around the ESP-IDF UART C primitives.
 // Responsible only for hardware configuration, driver lifecycle, and raw I/O.
@@ -37,8 +37,8 @@ class UartPort {
     // Uninstall the UART driver (idempotent).
     void deinit();
 
-    // Read up to maxLen bytes into buf; blocks for at most timeout ticks.
-    // Returns the number of bytes read, or -1 on error.
+    /// Read up to maxLen bytes into buf; blocks for at most timeout ticks.
+    /// Returns the number of bytes read, or -1 on error.
     int read(uint8_t *buf, size_t maxLen, TickType_t timeout);
     int read(uint8_t *buf, size_t maxLen, std::chrono::milliseconds timeout) {
         return read(
@@ -49,11 +49,21 @@ class UartPort {
         return read(buf, maxLen, portMAX_DELAY);
     }
 
-    // Write len bytes from data to the UART TX.
+    /// Write len bytes from data to the UART TX.
     void write(const void *data, size_t len);
-    // Write a std::string to the UART TX.
-    inline void write(const std::string &str) {
-        write(str.c_str(), str.size());
+    /// Write data followed by a newline.
+    inline void writeln(const void *data, size_t len) {
+        write(data, len);
+        write("\n", 1);
+    }
+    /// Write a std::string to the UART TX.
+    inline void write(const std::string_view &str) {
+        write(str.data(), str.size());
+    }
+    /// Write a string followed by a newline to the UART TX.
+    inline void writeln(const std::string_view &str) {
+        write(str.data(), str.size());
+        write("\n", 1);
     }
 
   private:

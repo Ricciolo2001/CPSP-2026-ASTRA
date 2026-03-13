@@ -1,20 +1,22 @@
 #include "BleManager.h"
 
+#include <cmath>
 #include <mutex>
 
-#include "freertos/mutex.hpp"
-#include "freertos/task.hpp"
+#include "freertos/semaphore.hpp"
 
 const int MEASURED_POWER = -60;
 const float N_FACTOR = 2.5;
 
-namespace {
-float calculateDistance(int rssi) {
-    if (rssi == 0)
-        return -1.0;
-    return pow(10, (float)(MEASURED_POWER - rssi) / (10 * N_FACTOR));
+void RssiFilter::update(float newSample) {
+    if (isFirstSample_) {
+        currentAverage_ = newSample;
+        isFirstSample_ = false;
+    } else {
+        currentAverage_ =
+            (alpha_ * newSample) + ((1.0f - alpha_) * currentAverage_);
+    }
 }
-} // namespace
 
 // ! Da calibrare per il singolo sensore, guardare una guida su come fare (la
 // calibrazione andrebbe fatta ad un metro di distnaza) ! Ovviamente le board
@@ -22,101 +24,138 @@ float calculateDistance(int rssi) {
 // condensatori) quindi non avremo risultati solidi... ! Nell'AI deck invece c'è
 // un RF matching fatto bene, e un bellissimo shield per le interferenze...
 
-BleManager::BleManager()
-    : freertos::Task<BleManager>({"BLEScan", 4096, 1}), _targetName(""),
-      _rssiHistory(), _mutex() {}
+BleManager &BleManager::instance() {
+    static BleManager inst;
+    return inst;
+}
+
+BleManager::~BleManager() { stopBackgroundScan(); }
+
+void BleManager::applyScanParams(bool active) {
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    if (active) {
+        pScan->setActiveScan(true);
+        pScan->setInterval(100); // 99% duty cycle
+        pScan->setWindow(99);
+    } else {
+        pScan->setActiveScan(false);
+        pScan->setInterval(200); // default 50/200
+        pScan->setWindow(50);
+    }
+}
 
 void BleManager::init() {
     NimBLEDevice::init("");
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(this, false);
-    pScan->setActiveScan(true);
-    pScan->setInterval(45); // Più veloce per non perdere pacchetti
-    pScan->setWindow(15);
+    pScan->setDuplicateFilter(false);
+    applyScanParams(false);
+}
+
+void BleManager::startBackgroundScan() {
+    _bgScanActive.store(true, std::memory_order_relaxed);
+    applyScanParams(false);
+    // Non-blocking: returns immediately after posting to NimBLE's event queue.
+    // The callback is invoked on Core 0 (NimBLE host task) when the scan ends.
+    NimBLEDevice::getScan()->start(1, &BleManager::onBgScanComplete, false);
+}
+
+void BleManager::stopBackgroundScan() {
+    if (!_bgScanActive.exchange(false, std::memory_order_relaxed))
+        return;
+    NimBLEDevice::getScan()->stop();
+    _bgScanStopped.take(pdMS_TO_TICKS(2000));
+}
+
+// Called on Core 0 by NimBLE when a 1-second background scan cycle ends.
+void BleManager::onBgScanComplete(NimBLEScanResults /*results*/) {
+    NimBLEDevice::getScan()->clearResults();
+    if (instance()._bgScanActive.load(std::memory_order_relaxed)) {
+        NimBLEDevice::getScan()->start(1, &BleManager::onBgScanComplete, false);
+    } else {
+        instance()._bgScanStopped.give();
+    }
 }
 
 void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
     std::lock_guard lock(_mutex);
 
-    if (_targetName == "" || advertisedDevice->getName() != _targetName) {
-        // If it's not the device we're monitoring, ignore it
-        return;
-    }
+    auto addr = advertisedDevice->getAddress();
+    auto addrStr = addr.toString();
 
-    // Update RSSI history and last seen time
-    _rssiHistory.push_back(advertisedDevice->getRSSI());
-    if (_rssiHistory.size() > 5) {
-        _rssiHistory.pop_front();
+    if (_targetName != "" && addrStr == _targetName) {
+        _targetRssiFilter.update(advertisedDevice->getRSSI());
+        _targetLastSeenTime = millis();
     }
-
-    _lastSeenTime = millis();
 }
 
-std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds) {
-    NimBLEScan *pScan = NimBLEDevice::getScan();
-
-    pScan->stop(); // Stop the background scan
-
-    {
-        std::lock_guard lock(_mutex);
-        _manualScanInProgress = true;
+std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds,
+                                               bool active) {
+    // Stop background scan and wait for the current cycle to end (≤1 s).
+    if (_bgScanActive.exchange(false, std::memory_order_relaxed)) {
+        NimBLEDevice::getScan()->stop();
+        _bgScanStopped.take(pdMS_TO_TICKS(2000));
     }
 
-    // Start the manual scan
-    NimBLEScanResults results = pScan->start(duration_seconds, false);
+    // Start the manual scan — non-blocking, results arrive in the callback.
+    NimBLEDevice::getScan()->clearResults();
+    applyScanParams(active);
+    NimBLEDevice::getScan()->start(duration_seconds,
+                                   &BleManager::onManualScanComplete, false);
 
-    {
-        std::lock_guard lock{_mutex};
-        _manualScanInProgress = false;
-    }
+    _manualScanDone.take(pdMS_TO_TICKS((duration_seconds + 2) * 1000));
+    return _manualScanResults;
+}
 
-    // Data to send back to caller
+// Called on Core 0 by NimBLE when the manual scan finishes.
+void BleManager::onManualScanComplete(NimBLEScanResults results) {
     std::vector<BleDevice> list;
-    for (int i = 0; i < results.getCount(); i++) {
-        NimBLEAdvertisedDevice device = results.getDevice(i);
-        list.push_back({device.getName(), device.getAddress().toString(),
-                        device.getRSSI(), calculateDistance(device.getRSSI())});
-    }
-    pScan->clearResults();
+    list.reserve(results.getCount());
+    for (auto *device : results) {
+        // 1. Get the Service UUID (if it exists)
+        std::string serviceUUIDStr = "";
+        if (device->haveServiceUUID()) {
+            serviceUUIDStr = device->getServiceUUID().toString();
+        }
 
-    return list;
+        // 2. Get Service Data
+        // Note: Some devices have multiple service data entries.
+        // This gets the data for the FIRST UUID found.
+        std::string servDataHex = "";
+        if (device->getServiceDataCount() > 0) {
+            // Get the UUID associated with the first piece of service data
+            NimBLEUUID uuid = device->getServiceDataUUID(0);
+            servDataHex = device->getServiceData(uuid);
+            // Note: NimBLE returns this as a string of raw bytes
+        }
+
+        list.emplace_back(device->getName(), device->getAddress().toString(),
+                          device->getRSSI(), serviceUUIDStr, servDataHex);
+    }
+    NimBLEDevice::getScan()->clearResults();
+
+    instance()._manualScanResults = std::move(list);
+    instance()._manualScanDone.give();
+
+    // Resume background scanning — safe here because we're on Core 0.
+    instance().startBackgroundScan();
 }
 
 bool BleManager::setTargetDevice(std::string name) {
     std::lock_guard lock(_mutex);
-
-    // TODO: Look if the device exist!
     _targetName = name;
-    _rssiHistory.clear();
+    _targetRssiFilter = RssiFilter();
+    _targetLastSeenTime = 0;
     return true;
 }
 
-float BleManager::getTargetDistance() {
+float BleManager::getTargetRssi() {
     std::lock_guard lock(_mutex);
-    // Se non abbiamo almeno 5 misurazioni o è passato troppo tempo, fuori
-    // portata
-    if (_rssiHistory.size() < 5 || millis() - _lastSeenTime > _timeoutMs) {
-        return -1.0;
+    if (_targetName == "") {
+        return -1.0f;
     }
-
-    // Calcola la media delle ultime 5 distanze
-    float sum = 0.0;
-    for (int rssi : _rssiHistory) {
-        sum += calculateDistance(rssi);
+    if (millis() - _targetLastSeenTime > _timeoutMs) {
+        return -1.0f;
     }
-    return sum / 5.0;
-}
-
-void BleManager::run() {
-    while (running_.load(std::memory_order_relaxed)) {
-        bool pause = false;
-        {
-            std::lock_guard lock(_mutex);
-            pause = _manualScanInProgress;
-        }
-        if (!pause) {
-            NimBLEDevice::getScan()->start(1, false); // Scan for one second
-        }
-        vTaskDelay(100 / portTICK_PERIOD_MS); // Pausa di 100ms
-    }
+    return _targetRssiFilter.get();
 }

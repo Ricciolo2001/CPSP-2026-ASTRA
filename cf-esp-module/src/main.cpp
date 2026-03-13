@@ -11,27 +11,7 @@
 #include "UartDaemon.h"
 #include "struct/UartTaskParams.h"
 
-// !================================================
-
-/**
- * This is an example which echos any data it receives on configured UART back
- * to the sender, with hardware flow control turned off. It does not use UART
- * driver event queue.
- *
- * - Port: configured UART
- * - Receive (Rx) buffer: on
- * - Transmit (Tx) buffer: off
- * - Flow control: off
- * - Event queue: off
- * - Pin assignment: see defines below (See Kconfig)
- */
-
-// !================================================
-
-static BleManager ble;
-static UartDaemon uartDaemon{UartDaemon::Config{}, &ble};
-
-// =================================================
+static std::optional<UartDaemon> uartDaemon;
 
 void setup() {
     Serial.begin(115200);
@@ -39,23 +19,18 @@ void setup() {
     Serial.println("Serial monitor setup complete.");
 
     // BLE initial setup
+    BleManager &ble = BleManager::instance();
     ble.init();
-    ble.start(); // launch the continuous background scan task
+    ble.startBackgroundScan();
 
-    Serial.println("BLE Manager initialized.");
+    Serial.println("BLE Manager initialized, background scan running.");
 
     pinMode(BUILTIN_LED, OUTPUT);
     digitalWrite(BUILTIN_LED, HIGH); // LOW turns the LED on, HIGH turns it off
-                                     // like who designed that?
+    // like who designed that?
 
-    // ?This is for the oler version, if the new works please delete
-    // Uart reciever task creation
-    // UartTaskParams *params = new UartTaskParams;
-    // params->port = UART_PORT_NUM;
-    // params->baudrate = UART_BAUD_RATE;
-    // params->ble = &ble;
-
-    uartDaemon.start();
+    uartDaemon.emplace(UartDaemon::Config{}, &ble);
+    uartDaemon->start();
 
     vTaskDelete(NULL); // Delete the default loop task, we don't need it
 }
