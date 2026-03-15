@@ -5,9 +5,6 @@
 
 #include "freertos/semaphore.hpp"
 
-const int MEASURED_POWER = -60;
-const float N_FACTOR = 2.5;
-
 void RssiFilter::update(float newSample) {
     if (isFirstSample_) {
         currentAverage_ = newSample;
@@ -83,7 +80,7 @@ void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
     auto addr = advertisedDevice->getAddress();
     auto addrStr = addr.toString();
 
-    if (_targetName != "" && addrStr == _targetName) {
+    if (_targetAddr != "" && addrStr == _targetAddr) {
         _targetRssiFilter.update(advertisedDevice->getRSSI());
         _targetLastSeenTime = millis();
     }
@@ -143,7 +140,7 @@ void BleManager::onManualScanComplete(NimBLEScanResults results) {
 
 bool BleManager::setTargetDevice(std::string name) {
     std::lock_guard lock(_mutex);
-    _targetName = name;
+    _targetAddr = name;
     _targetRssiFilter = RssiFilter();
     _targetLastSeenTime = 0;
     return true;
@@ -151,7 +148,7 @@ bool BleManager::setTargetDevice(std::string name) {
 
 float BleManager::getTargetRssi() {
     std::lock_guard lock(_mutex);
-    if (_targetName == "") {
+    if (_targetAddr == "") {
         return -1.0f;
     }
     if (millis() - _targetLastSeenTime > _timeoutMs) {

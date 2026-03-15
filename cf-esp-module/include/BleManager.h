@@ -60,7 +60,7 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
                                        bool active = true);
 
     // Set which device to track for real-time distance estimation.
-    bool setTargetDevice(std::string name);
+    bool setTargetDevice(std::string addr);
 
     // Returns averaged RSSI, or -1.0 if out of range.
     float getTargetRssi();
@@ -78,7 +78,7 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     // Protects _targetName, _rssiHistory, _lastSeenTime.
     freertos::Mutex _mutex;
 
-    std::string _targetName;
+    std::string _targetAddr;
     RssiFilter _targetRssiFilter;
     unsigned long _targetLastSeenTime = 0;
     const uint32_t _timeoutMs = 10000;
