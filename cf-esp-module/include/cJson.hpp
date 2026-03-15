@@ -80,19 +80,9 @@ class AllocatedStr : public std::unique_ptr<char, decltype(&cJSON_free)> {
     }
 };
 
-inline AllocatedStr printUnformatted(const Document &doc) {
+inline AllocatedStr printUnformatted(const Element &doc) {
     assert(doc.get() != nullptr);
     return AllocatedStr{cJSON_PrintUnformatted(doc.get())};
-}
-
-inline AllocatedStr printUnformatted(const Arr &arr) {
-    assert(arr.get() != nullptr);
-    return AllocatedStr{cJSON_PrintUnformatted(arr.get())};
-}
-
-inline AllocatedStr printUnformatted(const Str &str) {
-    assert(str.get() != nullptr);
-    return AllocatedStr{cJSON_PrintUnformatted(str.get())};
 }
 
 } // namespace cjson
