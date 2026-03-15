@@ -9,7 +9,6 @@
 
 #include "BleManager.h"
 #include "UartDaemon.h"
-#include "struct/UartTaskParams.h"
 
 static std::optional<UartDaemon> uartDaemon;
 
