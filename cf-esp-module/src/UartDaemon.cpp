@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include <cJSON.h>
-#include <cstring>
+#include <cctype>
 #include <memory>
 
 #include "cJson.hpp"
@@ -18,6 +18,13 @@ cjson::Document successResponse(cjson::Element message) {
     cjson::Document doc{};
     doc.add("result", std::move(message));
     return doc;
+}
+
+std::string toLower(std::string_view str) {
+    std::string result(str);
+    for (char &c : result)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return result;
 }
 
 } // namespace
@@ -90,78 +97,95 @@ void UartDaemon::run() {
 
 void UartDaemon::executeCommand(const std::string &command,
                                 const std::string &args) {
+    // Normalise once so handlers don't need case-insensitive comparisons.
+    std::string lowercaseCommand = toLower(command);
 
     Serial.printf("UART: Received command: '%s' with args: '%s'\n",
-                  command.c_str(), args.c_str());
+                  lowercaseCommand.c_str(), args.c_str());
 
-    if (strcasecmp(command.c_str(), "SCAN") == 0) {
-        Serial.println("UART: Command SCAN received.");
-        auto devices = ble_->scanDevices(5);
+    // The table is static const so it lives in flash (.rodata) rather than
+    // being reconstructed on the stack every call. This requires plain function
+    // pointers. Lambdas that capture 'this' become closure objects and lose
+    // the ability to decay to a raw pointer, so the instance is passed as an
+    // explicit 'self' parameter instead.
+    using Handler = void (*)(UartDaemon &, const std::string &);
+    struct Entry {
+        std::string_view name;
+        Handler fn;
+    };
 
-        Serial.printf("UART: Found %d devices.\n", (int)devices.size());
+    static const Entry kCommands[] = {
+        {"scan",
+         [](UartDaemon &self, const std::string &) {
+             Serial.println("UART: Command SCAN received.");
+             auto devices = self.ble_->scanDevices(5);
+             Serial.printf("UART: Found %d devices.\n", (int)devices.size());
 
-        cjson::Document root{};
-        cjson::Arr deviceArray{};
-        for (const auto &dev : devices) {
-            cjson::Document d{};
-            d.add("name", cjson::Str(dev.name));
-            d.add("address", cjson::Str(dev.address));
-            d.add("rssi", cjson::Num(dev.rssi));
-            d.add("serviceUUID", cjson::Str(dev.serviceUUID));
-            d.add("serviceData", cjson::Str(dev.serviceData));
+             cjson::Arr deviceArray{};
+             for (const auto &dev : devices) {
+                 cjson::Document d{};
+                 d.add("name", cjson::Str(dev.name));
+                 d.add("address", cjson::Str(dev.address));
+                 d.add("rssi", cjson::Num(dev.rssi));
+                 d.add("serviceUUID", cjson::Str(dev.serviceUUID));
+                 d.add("serviceData", cjson::Str(dev.serviceData));
+                 deviceArray.addItem(std::move(d));
+             }
+             auto response = successResponse(std::move(deviceArray));
+             auto jsonStr = cjson::printUnformatted(std::move(response));
+             self.uart_.writeln(std::string_view(jsonStr));
+         }},
+        {"bind",
+         [](UartDaemon &self, const std::string &a) {
+             if (a.empty()) {
+                 Serial.println(
+                     "UART: BIND requires a device address argument.");
+                 auto errJson = errorResponse(cjson::Str(
+                     "BIND command requires a device address argument"));
+                 auto jsonStr = cjson::printUnformatted(errJson);
+                 self.uart_.writeln(std::string_view(jsonStr));
+                 return;
+             }
+             Serial.printf("UART: Command BIND received with address: %s\n",
+                           a.c_str());
+             bool success = self.ble_->setTargetDevice(a);
+             Serial.printf("UART: BIND result: %s\n",
+                           success ? "success" : "failure");
+             auto responseMsg =
+                 success
+                     ? successResponse(
+                           cjson::Str("Bound to device successfully"))
+                     : errorResponse(cjson::Str("Failed to bind to device"));
+             auto jsonStr = cjson::printUnformatted(responseMsg);
+             self.uart_.writeln(std::string_view(jsonStr));
+         }},
+        {"distance",
+         [](UartDaemon &self, const std::string &) {
+             Serial.println("UART: Command DISTANCE received.");
+             auto rssi = self.ble_->getTargetRssi();
+             Serial.printf("UART: Current RSSI of target device: %.2f\n", rssi);
+             auto response = successResponse(cjson::Num(rssi));
+             auto jsonStr = cjson::printUnformatted(response);
+             self.uart_.writeln(std::string_view(jsonStr));
+         }},
+        {"reset",
+         [](UartDaemon &self, const std::string &) {
+             // requestRestart() signals the task to exit run() and restart
+             // cleanly, avoiding a self-deletion deadlock.
+             self.requestRestart();
+         }},
+    };
 
-            deviceArray.addItem(std::move(d));
-        }
-
-        auto response = successResponse(std::move(deviceArray));
-        auto jsonStr = cjson::printUnformatted(std::move(response));
-        uart_.writeln(std::string_view(jsonStr));
-
-    } else if (strcasecmp(command.c_str(), "BIND") == 0) {
-        if (args.empty()) {
-            Serial.println("UART: BIND requires a device name argument.");
-            auto errJson = errorResponse(
-                cjson::Str("BIND command requires a device name argument"));
-            auto jsonStr = cjson::printUnformatted(errJson);
-            uart_.writeln(std::string_view(jsonStr));
+    for (const auto &entry : kCommands) {
+        if (lowercaseCommand == entry.name) {
+            entry.fn(*this, args);
             return;
         }
-
-        Serial.printf("UART: Command BIND received with name: %s\n",
-                      args.c_str());
-
-        bool success = ble_->setTargetDevice(args);
-
-        auto responseMsg =
-            success
-                ? successResponse(cjson::Str("Bound to device successfully"))
-                : errorResponse(cjson::Str("Failed to bind to device"));
-
-        Serial.printf("UART: BIND result: %s\n",
-                      success ? "success" : "failure");
-
-        auto jsonStr = cjson::printUnformatted(responseMsg);
-        uart_.writeln(std::string_view(jsonStr));
-
-    } else if (strcasecmp(command.c_str(), "DISTANCE") == 0) {
-        Serial.println("UART: Command DISTANCE received.");
-        auto distance = ble_->getTargetRssi();
-
-        Serial.printf("UART: Current distance to target device: %.2f\n",
-                      distance);
-
-        auto response = successResponse(cjson::Num(distance));
-        auto jsonStr = cjson::printUnformatted(response);
-        uart_.writeln(std::string_view(jsonStr));
-
-    } else if (strcasecmp(command.c_str(), "RESET") == 0) {
-        // Signal the task to restart cleanly (avoids self-deletion deadlock)
-        requestRestart();
-        return;
-    } else {
-        Serial.printf("UART: Unknown command: %s\n", command.c_str());
-        auto errJson = errorResponse(cjson::Str("Unknown command"));
-        auto jsonStr = cjson::printUnformatted(errJson);
-        uart_.writeln(std::string_view(jsonStr));
     }
+
+    // No match: unknown command
+    Serial.printf("UART: Unknown command: %s\n", lowercaseCommand.c_str());
+    auto errJson = errorResponse(cjson::Str("Unknown command"));
+    auto jsonStr = cjson::printUnformatted(errJson);
+    uart_.writeln(std::string_view(jsonStr));
 }
