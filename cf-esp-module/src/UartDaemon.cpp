@@ -29,34 +29,29 @@ std::string toLower(std::string_view str) {
 
 } // namespace
 
-UartDaemon::UartDaemon(const Config &config, BleManager *ble)
+UartDaemon::UartDaemon(const Config &config, BleManager &ble)
     : freertos::Task<UartDaemon>(
           {"uart_daemon_task", config.taskStackSize, config.taskPriority}),
       uart_(config.uartConfig), ble_(ble),
-      dataBuffer_(std::make_unique<uint8_t[]>(UartPort::kBufSize)) {}
+      dataBuffer_(std::make_unique<uint8_t[]>(UartDaemon::kBufSize)) {}
 
 UartDaemon::~UartDaemon() {
     stop(); // Automatic cleanup
 }
 
-bool UartDaemon::init() { return uart_.init(); }
-
 void UartDaemon::run() {
-    if (!init()) {
-        return;
-    }
     std::string lineBuffer;
 
     while (running_.load(std::memory_order_relaxed)) {
-        int len = uart_.read(dataBuffer_.get(), UartPort::kBufSize - 1,
-                             20 / portTICK_PERIOD_MS);
+        int len = uart_.read(dataBuffer_.get(), UartDaemon::kBufSize - 1,
+                             pdMS_TO_TICKS(20));
         if (len <= 0)
             continue;
 
         // Accumulate incoming bytes into the line buffer
         lineBuffer.append(reinterpret_cast<char *>(dataBuffer_.get()), len);
 
-        if (lineBuffer.length() > UartPort::kBufSize) {
+        if (lineBuffer.length() > UartDaemon::kBufSize) {
             Serial.printf("UART: Line buffer overflow. Goto data length: %d. "
                           "Clearing buffer.\n",
                           len);
@@ -91,8 +86,6 @@ void UartDaemon::run() {
 
         executeCommand(cmd, args);
     }
-
-    uart_.deinit();
 }
 
 void UartDaemon::executeCommand(const std::string &command,
@@ -118,7 +111,7 @@ void UartDaemon::executeCommand(const std::string &command,
         {"scan",
          [](UartDaemon &self, const std::string &) {
              Serial.println("UART: Command SCAN received.");
-             auto devices = self.ble_->scanDevices(5);
+             auto devices = self.ble_.scanDevices(5);
              Serial.printf("UART: Found %d devices.\n", (int)devices.size());
 
              cjson::Arr deviceArray{};
@@ -148,21 +141,17 @@ void UartDaemon::executeCommand(const std::string &command,
              }
              Serial.printf("UART: Command BIND received with address: %s\n",
                            a.c_str());
-             bool success = self.ble_->setTargetDevice(a);
-             Serial.printf("UART: BIND result: %s\n",
-                           success ? "success" : "failure");
+             self.ble_.setTargetDevice(a);
+
              auto responseMsg =
-                 success
-                     ? successResponse(
-                           cjson::Str("Bound to device successfully"))
-                     : errorResponse(cjson::Str("Failed to bind to device"));
+                 successResponse(cjson::Str("Bound to device successfully"));
              auto jsonStr = cjson::printUnformatted(responseMsg);
              self.uart_.writeln(std::string_view(jsonStr));
          }},
         {"distance",
          [](UartDaemon &self, const std::string &) {
              Serial.println("UART: Command DISTANCE received.");
-             auto rssi = self.ble_->getTargetRssi();
+             auto rssi = self.ble_.getTargetRssi();
              Serial.printf("UART: Current RSSI of target device: %.2f\n", rssi);
              auto response = successResponse(cjson::Num(rssi));
              auto jsonStr = cjson::printUnformatted(response);

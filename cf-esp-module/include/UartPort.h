@@ -12,19 +12,13 @@
 // Responsible only for hardware configuration, driver lifecycle, and raw I/O.
 class UartPort {
   public:
-    static constexpr int kBufSize = 1024;
-
     struct Config {
-        uart_port_t port = UART_NUM_1;
-        uart_config_t uart = {
-            .baud_rate = 115200,
-            .data_bits = UART_DATA_8_BITS,
-            .parity = UART_PARITY_DISABLE,
-            .stop_bits = UART_STOP_BITS_1,
-            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        };
-        int txdPin = 5;
-        int rxdPin = 6;
+        uart_port_t port;
+        int rxBufferSize;
+        int txBufferSize;
+        uart_config_t uart;
+        int txdPin = UART_PIN_NO_CHANGE;
+        int rxdPin = UART_PIN_NO_CHANGE;
         int rtsPin = UART_PIN_NO_CHANGE;
         int ctsPin = UART_PIN_NO_CHANGE;
     };
@@ -32,47 +26,44 @@ class UartPort {
     explicit UartPort(const Config &config);
     ~UartPort();
 
-    // Install the UART driver and configure pins. Returns false on failure.
-    bool init();
-    // Uninstall the UART driver (idempotent).
-    void deinit();
-
     /// Read up to maxLen bytes into buf; blocks for at most timeout ticks.
     /// Returns the number of bytes read, or -1 on error.
     int read(uint8_t *buf, size_t maxLen, TickType_t timeout);
-    /// Overload of read() that takes a std::chrono::milliseconds
-    /// timeout.
-    inline int read(uint8_t *buf, size_t maxLen,
-                    std::chrono::milliseconds timeout) {
-        auto ticks =
-            static_cast<TickType_t>(timeout.count() / portTICK_PERIOD_MS);
+    /// Overload of read() that takes a std::chrono::milliseconds timeout.
+    int read(uint8_t *buf, size_t maxLen, std::chrono::milliseconds timeout) {
+        auto ticks = pdMS_TO_TICKS(timeout.count());
         return read(buf, maxLen, ticks);
     }
     /// Overload of read() that blocks indefinitely until data is available.
-    inline int read(uint8_t *buf, size_t maxLen) {
+    int read(uint8_t *buf, size_t maxLen) {
         return read(buf, maxLen, portMAX_DELAY);
     }
 
     /// Write len bytes from data to the UART TX.
-    void write(const void *data, size_t len);
+    int write(const void *data, size_t len);
+    /// Write a string to the UART TX.
+    int write(std::string_view str) { return write(str.data(), str.size()); }
+
     /// Write data followed by a newline.
-    inline void writeln(const void *data, size_t len) {
+    void writeln(const void *data, size_t len) {
         write(data, len);
         write("\n", 1);
     }
-    /// Write a std::string to the UART TX.
-    inline void write(const std::string_view &str) {
-        write(str.data(), str.size());
-    }
-    /// Write a string followed by a newline to the UART TX.
-    inline void writeln(const std::string_view &str) {
+    void writeln(std::string_view str) {
         write(str.data(), str.size());
         write("\n", 1);
     }
 
   private:
     Config config_;
-    bool initialized_;
+
+    /// True if the UART driver has been installed.
+    bool initialized_ = false;
+
+    // Install the UART driver and configure pins. Returns false on failure.
+    bool init();
+    // Uninstall the UART driver and release resources.
+    void deinit();
 };
 
 #endif // UART_PORT_H

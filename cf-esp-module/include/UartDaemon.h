@@ -21,16 +21,17 @@ class UartDaemon : public freertos::Task<UartDaemon> {
         UBaseType_t taskPriority = 10;
     };
 
-    explicit UartDaemon(const Config &config, BleManager *ble);
+    explicit UartDaemon(const Config &config, BleManager &ble);
     ~UartDaemon();
 
   private:
+    static constexpr int kBufSize = 1024;
+
     UartPort uart_;
-    BleManager *ble_;
+    BleManager &ble_;
 
     std::unique_ptr<uint8_t[]> dataBuffer_;
 
-    bool init();
     void run();
     void executeCommand(const std::string &command, const std::string &args);
 };

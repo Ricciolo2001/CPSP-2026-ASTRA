@@ -10,7 +10,27 @@ namespace cjson {
 ///
 /// It manages the lifetime of a cJSON item, ensuring that it is properly freed
 /// when the wrapper goes out of scope.
-using Element = std::unique_ptr<cJSON, void (*)(cJSON *)>;
+class Element {
+  public:
+    explicit Element(cJSON *ptr) : element_(ptr, cJSON_Delete) {}
+
+    Element(Element &&) = default;
+    Element &operator=(Element &&) = default;
+
+    // Non-copyable.
+    Element(const Element &) = delete;
+    Element &operator=(const Element &) = delete;
+
+    /// Get the raw cJSON pointer. Useful for passing to cJSON functions.
+    cJSON *get() const { return element_.get(); }
+
+    /// Release ownership of the cJSON pointer.
+    /// The caller is responsible for freeing it.
+    cJSON *release() { return element_.release(); }
+
+  private:
+    std::unique_ptr<cJSON, void (*)(cJSON *)> element_;
+};
 
 /// A JSON document/object.
 ///
@@ -18,12 +38,12 @@ using Element = std::unique_ptr<cJSON, void (*)(cJSON *)>;
 /// this object is destroyed.
 class Document : public Element {
   public:
-    Document() : Element(cJSON_CreateObject(), cJSON_Delete) {}
+    Document() : Element(cJSON_CreateObject()) {}
 
     /// Add a wrapped item to the object with the given key.
     void add(const char *key, Element item) {
         assert(get() != nullptr);
-        assert(item != nullptr);
+        assert(item.get() != nullptr);
         // Note: cJSON_AddItemToObject takes ownership of the item, so we
         // release it from the wrapper
         cJSON_AddItemToObject(get(), key, item.release());
@@ -37,7 +57,7 @@ class Document : public Element {
     /// ownership.
     void addRef(const char *key, const Element &item) {
         assert(get() != nullptr);
-        assert(item != nullptr);
+        assert(item.get() != nullptr);
         // Note: cJSON_AddItemToObject does NOT take ownership of the item, so
         // we do NOT release it from the wrapper
         cJSON_AddItemReferenceToObject(get(), key, item.get());
@@ -53,21 +73,21 @@ class Document : public Element {
 /// this object is destroyed.
 class Arr : public Element {
   public:
-    Arr() : Element(cJSON_CreateArray(), cJSON_Delete) {}
+    Arr() : Element(cJSON_CreateArray()) {}
 
     /// Add a wrapped item to the array. Takes ownership from the wrapper.
     void addItem(Element item) {
         assert(get() != nullptr);
-        assert(item != nullptr);
+        assert(item.get() != nullptr);
         // Note: cJSON_AddItemToArray takes ownership of the item, so we release
         // it from the wrapper
         cJSON_AddItemToArray(get(), item.release());
     }
 
     /// Add a wrapped item to the array without transferring ownership.
-    void addItemRef(Element item) {
+    void addItemRef(const Element &item) {
         assert(get() != nullptr);
-        assert(item != nullptr);
+        assert(item.get() != nullptr);
         // Note: cJSON_AddItemToArray does NOT take ownership of the item, so we
         // do NOT release it from the wrapper
         cJSON_AddItemToArray(get(), item.get());
@@ -80,10 +100,9 @@ class Arr : public Element {
 /// object is destroyed.
 class Str : public Element {
   public:
-    explicit Str(const char *str)
-        : Element(cJSON_CreateString(str), cJSON_Delete) {}
+    explicit Str(const char *str) : Element(cJSON_CreateString(str)) {}
 
-    explicit Str(std::string str) : Str(str.c_str()) {}
+    explicit Str(std::string_view str) : Str(str.data()) {}
 
     explicit operator std::string_view() const {
         assert(get() != nullptr);
@@ -98,7 +117,7 @@ class Str : public Element {
 class StrRef : public Element {
   public:
     explicit StrRef(const char *str)
-        : Element(cJSON_CreateStringReference(str), cJSON_Delete) {}
+        : Element(cJSON_CreateStringReference(str)) {}
 
     explicit operator std::string_view() const {
         assert(get() != nullptr);
@@ -109,36 +128,35 @@ class StrRef : public Element {
 /// A JSON number.
 class Num : public Element {
   public:
-    explicit Num(double num) : Element(cJSON_CreateNumber(num), cJSON_Delete) {}
+    explicit Num(double num) : Element(cJSON_CreateNumber(num)) {}
 };
 
 /// A JSON boolean.
 class Bool : public Element {
   public:
-    explicit Bool(bool value)
-        : Element(cJSON_CreateBool(value), cJSON_Delete) {}
+    explicit Bool(bool value) : Element(cJSON_CreateBool(value)) {}
 };
 
+/// A JSON null value.
 class Null : public Element {
   public:
-    Null() : Element(cJSON_CreateNull(), cJSON_Delete) {}
+    Null() : Element(cJSON_CreateNull()) {}
 };
 
 /// A heap-allocated string returned by cJSON_Print or cJSON_PrintUnformatted.
 ///
 /// The pointed-to string is owned by this object and will be freed when this
 /// object is destroyed.
-class AllocatedStr : public std::unique_ptr<char, decltype(&cJSON_free)> {
+class AllocatedStr {
   public:
-    explicit AllocatedStr(char *str)
-        : std::unique_ptr<char, decltype(&cJSON_free)>(str, cJSON_free) {}
+    explicit AllocatedStr(char *str) : str_(str, cJSON_free) {}
 
-    /// Allow explicit coversion to std::string_view for easy printing, etc.
-    /// Internally string_view constructor calls ::length
     explicit operator std::string_view() const {
-        assert(get() != nullptr);
-        return std::string_view(get());
+        return std::string_view(str_.get());
     }
+
+  private:
+    std::unique_ptr<char, decltype(&cJSON_free)> str_;
 };
 
 /// Print the JSON document without formatting (no newlines, no indentation).
@@ -147,7 +165,11 @@ class AllocatedStr : public std::unique_ptr<char, decltype(&cJSON_free)> {
 /// when the AllocatedStr goes out of scope.
 inline AllocatedStr printUnformatted(const Element &doc) {
     assert(doc.get() != nullptr);
-    return AllocatedStr{cJSON_PrintUnformatted(doc.get())};
+    char *str = cJSON_PrintUnformatted(doc.get());
+    if (!str) {
+        throw std::runtime_error("Failed to print JSON document");
+    }
+    return AllocatedStr{str};
 }
 
 /// Print the JSON document with formatting (newlines, indentation).
@@ -156,7 +178,9 @@ inline AllocatedStr printUnformatted(const Element &doc) {
 /// when the AllocatedStr goes out of scope.
 inline AllocatedStr print(const Element &doc) {
     assert(doc.get() != nullptr);
-    return AllocatedStr{cJSON_Print(doc.get())};
+    char *str = cJSON_Print(doc.get());
+    assert(str != nullptr && "cJSON_Print failed to allocate string");
+    return AllocatedStr{str};
 }
 
 } // namespace cjson

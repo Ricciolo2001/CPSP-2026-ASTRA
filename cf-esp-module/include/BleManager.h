@@ -3,13 +3,13 @@
 
 #include <NimBLEDevice.h>
 #include <atomic>
-#include <deque>
 #include <string>
-#include <variant>
 #include <vector>
 
+#include "EwmaFilter.hpp"
 #include "freertos/semaphore.hpp"
 
+/// Represents a BLE device found during scanning.
 struct BleDevice {
     std::string name;
     std::string address;
@@ -23,23 +23,27 @@ struct BleDevice {
           serviceUUID(std::move(su)), serviceData(std::move(sd)) {}
 };
 
-class RssiFilter {
-  public:
-    // alpha: 0.0 to 1.0.
-    // Higher = more responsive (less smooth). Lower = slower (smoother).
-    explicit RssiFilter(float alpha = 0.2f) : alpha_(alpha) {}
-
-    void update(float newSample);
-    float get() const { return currentAverage_; }
-
-  private:
-    float alpha_;
-    float currentAverage_ = 0.0f;
-    bool isFirstSample_ = true;
-};
-
+/// Manages BLE scanning and tracking of a target device's RSSI.
+///
+/// Remember to call `init()` before using, otherwise the behavior is undefined.
+///
+/// This class is a singleton that interfaces with the NimBLE library to perform
+/// BLE scans. It supports both continuous background scanning (for tracking a
+/// target device) and on-demand active scanning (for device discovery).
+///
+/// Active scanning is more power-intensive and sends scan requests to nearby
+/// devices to retrieve additional information like full device names.
+/// Background scanning is more power-efficient and only listens for
+/// advertisements without sending scan requests.
 class BleManager : public NimBLEAdvertisedDeviceCallbacks {
   public:
+    /// Returns the singleton instance of BleManager.
+    ///
+    /// The first call to this function will construct the instance. Subsequent
+    /// calls will return the same instance.
+    ///
+    /// The instance is never destroyed, so it will remain valid for the
+    /// lifetime of the program.
     static BleManager &instance();
 
     // Non-copyable, non-movable.
@@ -48,42 +52,66 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
 
     ~BleManager();
 
-    void init();
-
-    // Start/stop the continuous background BLE scan.
+    /// Start the background BLE scan.
+    /// This will run indefinitely until stopBackgroundScan() is called.
     void startBackgroundScan();
+
+    /// Stop the background BLE scan.
+    /// This will block until the scan has fully stopped.
     void stopBackgroundScan();
 
-    // Pause background scan, perform a full N-second scan, return all devices.
-    // active=true uses a 99% duty cycle; active=false uses the default 50/200.
-    std::vector<BleDevice> scanDevices(uint32_t duration_seconds = 5,
-                                       bool active = true);
+    /// Perform a one-time active scan for nearby BLE devices. Blocks until the
+    /// scan completes (or times out) and returns the list of devices found.
+    std::vector<BleDevice> scanDevices(uint32_t duration_seconds = 5);
 
-    // Set which device to track for real-time distance estimation.
-    bool setTargetDevice(std::string addr);
+    /// Set the target device by its BLE address (e.g. "AA:BB:CC:DD:EE:FF").
+    ///
+    /// After setting the target device, the manager will track its RSSI in the
+    /// background and make it available via getTargetRssi().
+    void setTargetDevice(std::string addr);
 
-    // Returns averaged RSSI, or -1.0 if out of range.
+    /// Get the current RSSI of the target device.
+    ///
+    /// Returns the smoothed RSSI value based on recent samples.
+    /// If the target device was never seen or hasn't been seen for a while,
+    /// returns -1.
     float getTargetRssi();
 
   private:
-    BleManager() = default;
+    BleManager();
 
-    void applyScanParams(bool active);
+    enum class ScanMode {
+        // Passive, low duty cycle used during normal flight.
+        Background,
+        // Active, high duty cycle used for device discovery.
+        // Sends scan requests to retrieve full device names.
+        Discovery,
+    };
+
+    /// Configure the NimBLE scan parameters based on the desired scan mode.
+    void applyScanParams(ScanMode mode);
+    /// Callback invoked by NimBLE for each advertisement received during
+    /// scanning.
     void onResult(NimBLEAdvertisedDevice *advertisedDevice) override;
 
-    // Scan-complete callbacks invoked by NimBLE on Core 0.
+    /// Callbacks invoked by NimBLE when a scan cycle completes.
     static void onBgScanComplete(NimBLEScanResults results);
     static void onManualScanComplete(NimBLEScanResults results);
 
-    // Protects _targetName, _rssiHistory, _lastSeenTime.
-    freertos::Mutex _mutex;
+    // Target related state
 
+    freertos::Mutex _targetMutex;
     std::string _targetAddr;
-    RssiFilter _targetRssiFilter;
+    EwmaFilter<float> _targetRssiFilter;
     unsigned long _targetLastSeenTime = 0;
     const uint32_t _timeoutMs = 10000;
 
+    /// While true, the background scan is active and onBgScanComplete should
+    /// restart itself. When set to false, onBgScanComplete will signal that the
+    /// background scan has fully stopped.
     std::atomic<bool> _bgScanActive{false};
+    const uint32_t _bgScanPeriodMs = 1000;
+
     // Signalled by onBgScanComplete when it decides NOT to restart (bg scan
     // fully stopped).
     freertos::BinarySemaphore _bgScanStopped;

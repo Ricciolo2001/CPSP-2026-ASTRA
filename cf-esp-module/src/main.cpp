@@ -1,3 +1,4 @@
+#include <optional>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,7 +20,6 @@ void setup() {
 
     // BLE initial setup
     BleManager &ble = BleManager::instance();
-    ble.init();
     ble.startBackgroundScan();
 
     Serial.println("BLE Manager initialized, background scan running.");
@@ -28,7 +28,26 @@ void setup() {
     digitalWrite(BUILTIN_LED, HIGH); // LOW turns the LED on, HIGH turns it off
     // like who designed that?
 
-    uartDaemon.emplace(UartDaemon::Config{}, &ble);
+    auto config = UartDaemon::Config{
+        UartPort::Config{
+            UART_NUM_1,
+            2048, // TX buffer size
+            2048, // RX buffer size
+            {
+                115200,                   // Baudrate
+                UART_DATA_8_BITS,         // Byte size
+                UART_PARITY_DISABLE,      // Parity mode
+                UART_STOP_BITS_1,         // Stop bits
+                UART_HW_FLOWCTRL_DISABLE, // Flow control
+            },
+            GPIO_NUM_5, // TX pin
+            GPIO_NUM_6, // RX pin
+        },
+        4096, // Task stack size
+        10,   // Task priority
+    };
+
+    uartDaemon.emplace(config, ble);
     uartDaemon->start();
 
     vTaskDelete(NULL); // Delete the default loop task, we don't need it
