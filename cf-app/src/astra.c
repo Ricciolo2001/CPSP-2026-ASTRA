@@ -2,44 +2,39 @@
 #include <inttypes.h>
 #include <stdbool.h>
 
-// Suppress warnings about missing prototypes in firmware headers
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-prototypes"
-
-#include "FreeRTOSConfig.h"
-#include "app.h"
-
 #include "FreeRTOS.h" // IWYU pragma: keep
+
+#include "app.h"
 #include "task.h"
 #include "uart2.h"
 
 #define DEBUG_MODULE "ASTRA"
 #include "debug.h"
 
-#pragma GCC diagnostic pop
-
 #include "crtp_uart2_bridge.h"
 
-#define ASTRA_UART2_BAUDRATE         115200  // Baudrate for UART2 communication with ESP32
-#define ASTRA_UART2_POLLING_INTERVAL M2T(10) // 10 ms
-#define ASTRA_CRTP_PORT              0x0E    // CRTP port used for communication with ESP32
+#define ASTRA_UART2_BAUDRATE    115200 // Baudrate for UART2 communication with ESP32
+#define ASTRA_UART2_DEBOUNCE_MS 10   // Consider a packet complete if no new data is received on UART2 for this many ms
+#define ASTRA_CRTP_PORT         0x0E // CRTP port used for communication with ESP32
+#define ASTRA_BRIDGE_STACK_SIZE 1024 // Stack size (in words, ie x4 bytes on 32-bit targets)
 
 void appMain(void) {
   DEBUG_PRINT("Initializing ASTRA application...\n");
 
   // Initialize UART2
-  const uint32_t uart2Baudrate = ASTRA_UART2_BAUDRATE;
   DEBUG_PRINT("Initializing UART2 ...\n");
-  uart2Init(uart2Baudrate);
+  uart2Init(ASTRA_UART2_BAUDRATE);
   if (!uart2Test()) {
     DEBUG_PRINT("ERROR: Failed to initialize UART2\n");
     return;
   }
-  DEBUG_PRINT("UART2 initialized with baudrate %" PRId32 "\n", uart2Baudrate);
+  DEBUG_PRINT("UART2 initialized with baudrate %" PRId32 "\n", (uint32_t)ASTRA_UART2_BAUDRATE);
 
   CrtpUartBridgeConfig_t bridgeConfig = {
       .crtpPort = ASTRA_CRTP_PORT,
-      .uartDebounceMs = ASTRA_UART2_POLLING_INTERVAL / M2T(1), // Convert polling interval from ticks to ms
+      .uartDebounceMs = ASTRA_UART2_DEBOUNCE_MS,
+      .taskStackSize = ASTRA_BRIDGE_STACK_SIZE,
+      .taskPriority = tskIDLE_PRIORITY + 1,
   };
 
   DEBUG_PRINT("Starting CRTP <-> UART2 bridge with config: crtpPort=0x%02" PRIx8 ", uartDebounceMs=%" PRIu8 "\n",

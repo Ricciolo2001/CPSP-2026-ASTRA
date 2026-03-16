@@ -5,3 +5,4 @@ AlignConsecutiveMacros:
   AcrossEmptyLines: false
   AcrossComments: false
   AlignCompound: true
+IndentPPDirectives: BeforeHash

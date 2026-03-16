@@ -2,10 +2,6 @@
 
 #include <inttypes.h>
 
-// Suppress warnings about missing prototypes in firmware headers
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wstrict-prototypes"
-
 #include "FreeRTOS.h" // IWYU pragma: keep
 #include "FreeRTOSConfig.h"
 #include "crtp.h"
@@ -17,8 +13,7 @@
 #define DEBUG_MODULE "CRTP_UART2_BRIDGE"
 #include "debug.h"
 
-#pragma GCC diagnostic pop
-
+static CrtpUartBridgeConfig_t bridgeConfig;
 static TaskHandle_t uartToCrtpTaskHandle = NULL;
 static TaskHandle_t crtpToUartTaskHandle = NULL;
 
@@ -26,10 +21,10 @@ static TaskHandle_t crtpToUartTaskHandle = NULL;
  * Task: UART2 -> CRTP
  */
 static void uartToCrtpTask(void *params) {
-  const CrtpUartBridgeConfig_t *ctx = (const CrtpUartBridgeConfig_t *)params;
-  const uint32_t debounceTicks = M2T(10); // 10 ms debounce
+  (void)params;
+  const uint32_t debounceTicks = M2T(bridgeConfig.uartDebounceMs);
 
-  CRTPPacket packet = {.header = (uint8_t)CRTP_HEADER(ctx->crtpPort, 0)};
+  CRTPPacket packet = {.header = (uint8_t)CRTP_HEADER(bridgeConfig.crtpPort, 0)};
 
   while (true) {
     // Read data from UART2
@@ -37,8 +32,6 @@ static void uartToCrtpTask(void *params) {
 
     // If we read any data, send it as a CRTP packet
     if (bytesRead > 0) {
-      ASSERT((uint32_t)bytesRead <= sizeof(packet.data)); // Ensure we don't overflow the packet data buffer
-
       DEBUG_PRINT("UART2 -> CRTP: size=%d\n", (int)bytesRead);
       packet.size = (uint8_t)bytesRead;
       if (crtpSendPacket(&packet) != pdPASS) {
@@ -52,33 +45,52 @@ static void uartToCrtpTask(void *params) {
  * Task: CRTP -> UART2
  */
 static void crtpToUartTask(void *params) {
-  const CrtpUartBridgeConfig_t *ctx = (const CrtpUartBridgeConfig_t *)params;
+  (void)params;
   CRTPPacket packet;
 
   while (true) {
     // Wait for a CRTP packet to be received on the specified port
-    if (crtpReceivePacketBlock(ctx->crtpPort, &packet) == pdPASS) {
-      // If we received a packet, send its data over UART2
-      DEBUG_PRINT("CRTP -> UART2: size=%u\n", (unsigned int)packet.size);
-      uart2SendData(packet.size, packet.data);
+    if (crtpReceivePacketBlock(bridgeConfig.crtpPort, &packet) != pdPASS) {
+      DEBUG_PRINT("WARN: Failed to receive CRTP packet on port 0x%02" PRIx8 "\n", bridgeConfig.crtpPort);
+      continue;
     }
+
+    // Send it out over UART2
+    DEBUG_PRINT("CRTP -> UART2: size=%u\n", (unsigned int)packet.size);
+    uart2SendData(packet.size, packet.data);
   }
 }
 
-void crtpUartBridgeInit(CrtpUartBridgeConfig_t *const config) {
+void crtpUartBridgeInit(const CrtpUartBridgeConfig_t *config) {
+  if (crtpToUartTaskHandle != NULL || uartToCrtpTaskHandle != NULL) {
+    DEBUG_PRINT("ERROR: CRTP UART bridge tasks are already running\n");
+    return;
+  }
+
+  bridgeConfig = *config; // Store the config for use in tasks
+
   DEBUG_PRINT("Creating CRTP queue ... \n");
-  crtpInitTaskQueue(config->crtpPort);
+  crtpInitTaskQueue(bridgeConfig.crtpPort);
 
   // Create task to forward data UART2 -> CRTP
   DEBUG_PRINT("Creating task to forward data from UART2 to CRTP ...\n");
-  xTaskCreate(uartToCrtpTask, "ASTRA-U2C", configMINIMAL_STACK_SIZE, config, tskIDLE_PRIORITY + 1,
-              &uartToCrtpTaskHandle);
+  if (xTaskCreate(uartToCrtpTask, "ASTRA-U2C", bridgeConfig.taskStackSize, NULL, bridgeConfig.taskPriority,
+                  &uartToCrtpTaskHandle) != pdPASS) {
+    DEBUG_PRINT("ERROR: Failed to create UART2 -> CRTP task\n");
+    return;
+  }
   DEBUG_PRINT("Task to forward data from UART2 to CRTP created\n");
 
   // Create task to forward data CRTP -> UART2
   DEBUG_PRINT("Creating task to forward data from CRTP to UART2 ...\n");
-  xTaskCreate(crtpToUartTask, "ASTRA-C2U", configMINIMAL_STACK_SIZE, config, tskIDLE_PRIORITY + 1,
-              &crtpToUartTaskHandle);
+  if (xTaskCreate(crtpToUartTask, "ASTRA-C2U", bridgeConfig.taskStackSize, NULL, bridgeConfig.taskPriority,
+                  &crtpToUartTaskHandle) != pdPASS) {
+    DEBUG_PRINT("ERROR: Failed to create CRTP -> UART2 task\n");
+    // Clean up the previously created task
+    vTaskDelete(uartToCrtpTaskHandle);
+    uartToCrtpTaskHandle = NULL;
+    return;
+  }
   DEBUG_PRINT("Task to forward data from CRTP to UART2 created\n");
 }
 
