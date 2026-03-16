@@ -25,9 +25,8 @@ cjson::Document successResponse(cjson::Element message) {
 UartDaemon::UartDaemon(const Config &config, BleManager *ble)
     : freertos::Task<UartDaemon>(
           {"uart_daemon_task", config.taskStackSize, config.taskPriority}),
-      uart_({config.port, config.uart, config.txdPin, config.rxdPin,
-             config.rtsPin, config.ctsPin}),
-      ble_(ble), dataBuffer_(std::make_unique<uint8_t[]>(UartPort::kBufSize)) {}
+      uart_(config.uartConfig), ble_(ble),
+      dataBuffer_(std::make_unique<uint8_t[]>(UartPort::kBufSize)) {}
 
 UartDaemon::~UartDaemon() {
     stop(); // Automatic cleanup
@@ -110,7 +109,7 @@ void UartDaemon::executeCommand(const std::string &command,
             d.add("rssi", cjson::Num(dev.rssi));
             d.add("serviceUUID", cjson::Str(dev.serviceUUID));
             d.add("serviceData", cjson::Str(dev.serviceData));
-            
+
             deviceArray.addItem(std::move(d));
         }
 
