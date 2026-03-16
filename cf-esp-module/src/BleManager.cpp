@@ -100,8 +100,11 @@ std::vector<BleDevice> BleManager::scanDevices(uint32_t duration_seconds,
     NimBLEDevice::getScan()->start(duration_seconds,
                                    &BleManager::onManualScanComplete, false);
 
-    _manualScanDone.take(pdMS_TO_TICKS((duration_seconds + 2) * 1000));
-    return _manualScanResults;
+    if (!_manualScanDone.take(pdMS_TO_TICKS((duration_seconds + 2) * 1000))) {
+        // Timeout: manual scan didn't finish in expected time
+        return {};
+    }
+    return std::move(_manualScanResults);
 }
 
 // Called on Core 0 by NimBLE when the manual scan finishes.
