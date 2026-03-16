@@ -35,15 +35,15 @@ class Document : public Element {
 
     /// Add a wrapped item to the object with the given key without transferring
     /// ownership.
-    void addRef(const char *key, Element item) {
+    void addRef(const char *key, const Element &item) {
         assert(get() != nullptr);
         assert(item != nullptr);
         // Note: cJSON_AddItemToObject does NOT take ownership of the item, so
         // we do NOT release it from the wrapper
         cJSON_AddItemReferenceToObject(get(), key, item.get());
     }
-    void addRef(const std::string &key, Element item) {
-        addRef(key.c_str(), std::move(item));
+    void addRef(const std::string &key, const Element &item) {
+        addRef(key.c_str(), item);
     }
 };
 
