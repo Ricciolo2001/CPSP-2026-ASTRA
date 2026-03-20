@@ -15,7 +15,9 @@ class BeaconEstimate:
     samples_used: int
 
 
-def _residuals(point: np.ndarray, positions: np.ndarray, distances: np.ndarray) -> np.ndarray:
+def _residuals(
+    point: np.ndarray, positions: np.ndarray, distances: np.ndarray
+) -> np.ndarray:
     return np.linalg.norm(positions - point[None, :], axis=1) - distances
 
 
@@ -47,7 +49,10 @@ def estimate_beacon_position(
 
     positions = np.column_stack([x, y])
     distances = np.asarray(
-        [rssi_to_distance(v, tx_power_dbm=tx_power_dbm, path_loss_n=path_loss_n) for v in rssi],
+        [
+            rssi_to_distance(v, tx_power_dbm=tx_power_dbm, path_loss_n=path_loss_n)
+            for v in rssi
+        ],
         dtype=float,
     )
 
@@ -82,4 +87,6 @@ def estimate_beacon_position(
 
     final_residual = _residuals(point, positions, distances)
     rmse = float(np.sqrt(np.mean(final_residual**2)))
-    return BeaconEstimate(x=float(point[0]), y=float(point[1]), rmse=rmse, samples_used=len(x))
+    return BeaconEstimate(
+        x=float(point[0]), y=float(point[1]), rmse=rmse, samples_used=len(x)
+    )

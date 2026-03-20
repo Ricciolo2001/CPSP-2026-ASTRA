@@ -1,37 +1,112 @@
-import struct
+from __future__ import annotations
+
+import json
 from dataclasses import dataclass
 
-# Default packet format currently aligned with the placeholder already present in
-# the repository. Update this if the firmware sends a different payload.
-# <      little-endian
-# f f f  x, y, yaw   as float32
-# h      rssi        as int16
-# H      seq         as uint16
-DEFAULT_FMT = "<fffhH"
-PKT_SIZE = struct.calcsize(DEFAULT_FMT)
+# ---------------------------------------------------------------------------
+# CRTP port used by the ASTRA firmware app
+# ---------------------------------------------------------------------------
+
+CRTP_APP_PORT: int = 0x0E
+
+# ---------------------------------------------------------------------------
+# Commands (text strings sent to the firmware)
+# ---------------------------------------------------------------------------
+
+CMD_SCAN = "SCAN"
+CMD_DISTANCE = "DISTANCE"
+
+
+def cmd_bind(addr: str) -> str:
+    """Return the BIND command string for a given BLE address."""
+    return f"BIND {addr}"
+
+
+# ---------------------------------------------------------------------------
+# Response dataclasses (parsed from firmware JSON replies)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class ScanResult:
+    """Result of a SCAN command: list of discovered BLE device addresses."""
+
+    devices: list[str]
+
+
+@dataclass(slots=True)
+class DistanceResult:
+    """Result of a DISTANCE command: raw RSSI value in dBm."""
+
+    rssi_dbm: int
 
 
 @dataclass(slots=True)
 class Telemetry:
+    """
+    Combined sample collected during a flight: drone position (from the
+    Crazyflie state estimator) plus beacon RSSI (from DISTANCE command).
+    """
+
     x: float
     y: float
     yaw: float
     rssi: int
-    seq: int
 
 
-class PacketError(ValueError):
-    pass
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
 
 
-def unpack_packet(packet: bytes, fmt: str = DEFAULT_FMT) -> Telemetry:
-    expected = struct.calcsize(fmt)
-    if len(packet) != expected:
-        raise PacketError(f"Bad packet size: {len(packet)} (expected {expected})")
-
-    x, y, yaw, rssi, seq = struct.unpack(fmt, packet)
-    return Telemetry(x=float(x), y=float(y), yaw=float(yaw), rssi=int(rssi), seq=int(seq))
+class ProtocolError(ValueError):
+    """Raised when a firmware response cannot be parsed."""
 
 
-def pack_packet(t: Telemetry, fmt: str = DEFAULT_FMT) -> bytes:
-    return struct.pack(fmt, t.x, t.y, t.yaw, t.rssi, t.seq)
+# ---------------------------------------------------------------------------
+# Parsers
+# ---------------------------------------------------------------------------
+
+
+def _parse_json(text: str) -> dict:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ProtocolError(f"Invalid JSON response: {text!r}") from exc
+
+
+def parse_scan_response(text: str) -> ScanResult:
+    """
+    Parse a SCAN response.
+
+    Expected firmware JSON::
+
+        {"result": ["AA:BB:CC:DD:EE:FF", ...]}
+    """
+    data = _parse_json(text)
+    result = data.get("result")
+    if not isinstance(result, list):
+        raise ProtocolError(
+            f"SCAN response: expected a list in 'result', got: {text!r}"
+        )
+    return ScanResult(devices=[str(d) for d in result])
+
+
+def parse_distance_response(text: str) -> DistanceResult:
+    """
+    Parse a DISTANCE response.
+
+    Expected firmware JSON::
+
+        {"result": -72}
+    """
+    data = _parse_json(text)
+    result = data.get("result")
+    if result is None:
+        raise ProtocolError(f"DISTANCE response: missing 'result' field in: {text!r}")
+    try:
+        return DistanceResult(rssi_dbm=int(result))
+    except (TypeError, ValueError) as exc:
+        raise ProtocolError(
+            f"DISTANCE response: non-integer RSSI value {result!r}"
+        ) from exc

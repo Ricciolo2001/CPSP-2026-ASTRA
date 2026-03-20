@@ -23,6 +23,7 @@ class MedianEmaFilter:
             self._ema = med
         else:
             self._ema = self._alpha * med + (1.0 - self._alpha) * self._ema
+        assert self._ema is not None
         return self._ema
 
     @property
@@ -30,8 +31,10 @@ class MedianEmaFilter:
         return self._ema
 
 
-def rssi_to_distance(rssi_dbm: float, tx_power_dbm: float = -59.0, path_loss_n: float = 2.0) -> float:
-    """Log-distance path loss model."""
+def rssi_to_distance(
+    rssi_dbm: float, tx_power_dbm: float = -40.0, path_loss_n: float = 2.0
+) -> float:
+    """Log-distance path loss model"""
     if path_loss_n <= 0:
         raise ValueError("path_loss_n must be > 0")
     return 10.0 ** ((tx_power_dbm - float(rssi_dbm)) / (10.0 * path_loss_n))

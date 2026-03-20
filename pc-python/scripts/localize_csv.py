@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+"""
+localize_csv.py — Estimate beacon 2D position from a telemetry CSV log.
+
+Reads a CSV file produced by log_csv.py, converts the filtered RSSI values to
+distances using a log-distance path loss model, then estimates the beacon
+position via a coarse grid search followed by Gauss-Newton refinement.
+
+Optionally displays a 2D scatter plot of the drone trajectory coloured by RSSI
+with the estimated beacon position marked.
+
+Usage:
+    python scripts/localize_csv.py telemetry_log.csv --plot
+    python scripts/localize_csv.py telemetry_log.csv --tx-power -40 --path-loss 2.3 --plot
+"""
 from __future__ import annotations
 
 import argparse
@@ -12,11 +26,19 @@ from astra.localization import estimate_beacon_position
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Estimate beacon position from a telemetry CSV log.")
+    parser = argparse.ArgumentParser(
+        description="Estimate beacon position from a telemetry CSV log."
+    )
     parser.add_argument("csv_path", help="Telemetry CSV path")
-    parser.add_argument("--tx-power", type=float, default=-59.0, help="Beacon RSSI at 1 meter [dBm]")
-    parser.add_argument("--path-loss", type=float, default=2.0, help="Path loss exponent")
-    parser.add_argument("--plot", action="store_true", help="Show a 2D plot of samples and estimate")
+    parser.add_argument(
+        "--tx-power", type=float, default=-40.0, help="Beacon RSSI at 1 meter [dBm]"
+    )
+    parser.add_argument(
+        "--path-loss", type=float, default=2.0, help="Path loss exponent"
+    )
+    parser.add_argument(
+        "--plot", action="store_true", help="Show a 2D plot of samples and estimate"
+    )
     return parser.parse_args()
 
 

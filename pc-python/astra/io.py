@@ -4,13 +4,13 @@ import csv
 from pathlib import Path
 from typing import Iterable, Mapping
 
-CSV_HEADER = ["t", "x", "y", "yaw", "rssi_raw", "rssi_filtered", "seq"]
+CSV_HEADER = ["t", "x", "y", "yaw", "rssi_raw", "rssi_filtered"]
 
 
 def write_csv_rows(path: str | Path, rows: Iterable[Mapping[str, object]]) -> None:
     path = Path(path)
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=CSV_HEADER)
+        writer = csv.DictWriter(f, fieldnames=CSV_HEADER, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
@@ -30,7 +30,6 @@ def read_csv_rows(path: str | Path) -> list[dict[str, float]]:
                     "yaw": float(row["yaw"]),
                     "rssi_raw": float(row["rssi_raw"]),
                     "rssi_filtered": float(row["rssi_filtered"]),
-                    "seq": float(row["seq"]),
                 }
             )
     return out
