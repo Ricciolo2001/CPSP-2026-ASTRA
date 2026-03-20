@@ -19,6 +19,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/cdefs.h>
+
+#include "FreeRTOS.h" // IWYU pragma: keep
+#include "portmacro.h"
 
 /* -------------------------------------------------------------------------
  * BLE address type
@@ -26,18 +30,26 @@
 
 #define ASTRA_BLE_ADDR_LEN 6
 
-typedef uint8_t astra_dev_addr_t[ASTRA_BLE_ADDR_LEN];
+typedef struct __attribute__((packed)) {
+  uint8_t bytes[ASTRA_BLE_ADDR_LEN];
+} astra_dev_addr_t;
+
+/**
+ * @brief Compares two BLE addresses for equality.
+ * @return 0 if equal, -1 if addr1 < addr2, 1 if addr1 > addr2 (same semantics as memcmp)
+ */
+int astra_dev_addr_equal(const astra_dev_addr_t *addr1, const astra_dev_addr_t *addr2);
 
 /* -------------------------------------------------------------------------
  * Packet types
  * ---------------------------------------------------------------------- */
 
 typedef enum {
-  ASTRA_UART_BIND_REQUEST   = 0x01,
-  ASTRA_UART_BIND_RESPONSE  = 0x02,
+  ASTRA_UART_BIND_REQUEST = 0x01,
+  ASTRA_UART_BIND_RESPONSE = 0x02,
   ASTRA_UART_UNBIND_REQUEST = 0x03,
   ASTRA_UART_UNBIND_RESPONSE = 0x04,
-  ASTRA_UART_RSSI_VALUE     = 0x05,
+  ASTRA_UART_RSSI_VALUE = 0x05,
 } astra_uart_packet_type_t;
 
 /* -------------------------------------------------------------------------
@@ -64,9 +76,9 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
   uint8_t type; /**< One of astra_uart_packet_type_t */
   union {
-    astra_uart_bind_request_t  bind_request;
+    astra_uart_bind_request_t bind_request;
     astra_uart_bind_response_t bind_response;
-    astra_uart_rssi_value_t    rssi_value;
+    astra_uart_rssi_value_t rssi_value;
   } payload;
 } astra_uart_packet_t;
 
@@ -136,7 +148,7 @@ bool astra_uart_init(void);
  * @return true if the packet was enqueued, false if the queue was full within
  *         the timeout or the protocol layer has not been initialized.
  */
-bool astra_uart_send(const astra_uart_packet_t *packet, uint32_t timeout_ms);
+BaseType_t astra_uart_send(const astra_uart_packet_t *packet, TickType_t timeout);
 
 /**
  * @brief Receives the next packet from the RX queue.
@@ -150,4 +162,4 @@ bool astra_uart_send(const astra_uart_packet_t *packet, uint32_t timeout_ms);
  * @return true if a packet was retrieved, false if the queue was empty within
  *         the timeout or the protocol layer has not been initialized.
  */
-bool astra_uart_receive(astra_uart_packet_t *out_packet, uint32_t timeout_ms);
+BaseType_t astra_uart_receive(astra_uart_packet_t *out_packet, TickType_t timeout);

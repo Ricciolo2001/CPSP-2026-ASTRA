@@ -1,7 +1,9 @@
 #include "astra_uart.h"
 
+#include <assert.h>
 #include <string.h>
 
+#include "portmacro.h"
 #include "uart_framing.h"
 
 #include "FreeRTOS.h" // IWYU pragma: keep
@@ -17,20 +19,20 @@
  * ---------------------------------------------------------------------- */
 
 /** Number of packets that fit in the TX / RX queues. */
-#define TX_QUEUE_LEN     8U
-#define RX_QUEUE_LEN     8U
+#define TX_QUEUE_LEN 8U
+#define RX_QUEUE_LEN 8U
 
 /** Task stack depth in words (x4 bytes on 32-bit targets). */
 #define TASK_STACK_WORDS 256U
 
 /** FreeRTOS priority for both UART tasks. */
-#define TASK_PRIORITY    1U
+#define TASK_PRIORITY 1U
 
 /**
  * Raw (serialized, un-framed) buffer: 1-byte type tag + largest payload.
  * sizeof(astra_uart_rssi_value_t) == 7, so 64 bytes is generous.
  */
-#define RAW_BUF_SIZE   64U
+#define RAW_BUF_SIZE 64U
 
 /**
  * Framed buffer: RAW_BUF_SIZE + COBS overhead (1) + CRC16 (2) + delimiter (1).
@@ -44,14 +46,17 @@
 
 static QueueHandle_t s_tx_queue;
 static QueueHandle_t s_rx_queue;
-static bool          s_initialized = false;
+static bool s_initialized = false;
 
 /* -------------------------------------------------------------------------
  * Serialization / deserialization
  * ---------------------------------------------------------------------- */
 
-bool astra_uart_serialize(const astra_uart_packet_t *packet, uint8_t *out_buf, size_t out_max,
-                          size_t *out_len) {
+int astra_dev_addr_equal(const astra_dev_addr_t *addr1, const astra_dev_addr_t *addr2) {
+  return memcmp(addr1->bytes, addr2->bytes, ASTRA_BLE_ADDR_LEN);
+}
+
+bool astra_uart_serialize(const astra_uart_packet_t *packet, uint8_t *out_buf, size_t out_max, size_t *out_len) {
   if (packet == NULL || out_buf == NULL || out_len == NULL) {
     return false;
   }
@@ -60,17 +65,17 @@ bool astra_uart_serialize(const astra_uart_packet_t *packet, uint8_t *out_buf, s
    * need a single bounds check before writing anything to out_buf.          */
   size_t payload_size;
   switch ((astra_uart_packet_type_t)packet->type) {
-    case ASTRA_UART_BIND_REQUEST:
-      payload_size = sizeof(packet->payload.bind_request);
-      break;
-    case ASTRA_UART_BIND_RESPONSE:
-      payload_size = sizeof(packet->payload.bind_response);
-      break;
-    case ASTRA_UART_RSSI_VALUE:
-      payload_size = sizeof(packet->payload.rssi_value);
-      break;
-    default:
-      return false; /* unknown / unimplemented packet type */
+  case ASTRA_UART_BIND_REQUEST:
+    payload_size = sizeof(packet->payload.bind_request);
+    break;
+  case ASTRA_UART_BIND_RESPONSE:
+    payload_size = sizeof(packet->payload.bind_response);
+    break;
+  case ASTRA_UART_RSSI_VALUE:
+    payload_size = sizeof(packet->payload.rssi_value);
+    break;
+  default:
+    return false; /* unknown / unimplemented packet type */
   }
 
   size_t total = 1U /* type tag */ + payload_size;
@@ -81,17 +86,17 @@ bool astra_uart_serialize(const astra_uart_packet_t *packet, uint8_t *out_buf, s
   out_buf[0] = packet->type;
 
   switch ((astra_uart_packet_type_t)packet->type) {
-    case ASTRA_UART_BIND_REQUEST:
-      memcpy(&out_buf[1], &packet->payload.bind_request, payload_size);
-      break;
-    case ASTRA_UART_BIND_RESPONSE:
-      memcpy(&out_buf[1], &packet->payload.bind_response, payload_size);
-      break;
-    case ASTRA_UART_RSSI_VALUE:
-      memcpy(&out_buf[1], &packet->payload.rssi_value, payload_size);
-      break;
-    default:
-      return false;
+  case ASTRA_UART_BIND_REQUEST:
+    memcpy(&out_buf[1], &packet->payload.bind_request, payload_size);
+    break;
+  case ASTRA_UART_BIND_RESPONSE:
+    memcpy(&out_buf[1], &packet->payload.bind_response, payload_size);
+    break;
+  case ASTRA_UART_RSSI_VALUE:
+    memcpy(&out_buf[1], &packet->payload.rssi_value, payload_size);
+    break;
+  default:
+    return false;
   }
 
   *out_len = total;
@@ -110,29 +115,29 @@ bool astra_uart_deserialize(const uint8_t *data, size_t data_len, astra_uart_pac
   out_packet->type = data[0];
 
   const uint8_t *payload_data = data + 1;
-  size_t         payload_len  = data_len - 1U;
+  size_t payload_len = data_len - 1U;
 
   switch ((astra_uart_packet_type_t)out_packet->type) {
-    case ASTRA_UART_BIND_REQUEST:
-      if (payload_len != sizeof(out_packet->payload.bind_request)) {
-        return false;
-      }
-      memcpy(&out_packet->payload.bind_request, payload_data, payload_len);
-      break;
-    case ASTRA_UART_BIND_RESPONSE:
-      if (payload_len != sizeof(out_packet->payload.bind_response)) {
-        return false;
-      }
-      memcpy(&out_packet->payload.bind_response, payload_data, payload_len);
-      break;
-    case ASTRA_UART_RSSI_VALUE:
-      if (payload_len != sizeof(out_packet->payload.rssi_value)) {
-        return false;
-      }
-      memcpy(&out_packet->payload.rssi_value, payload_data, payload_len);
-      break;
-    default:
-      return false; /* unknown / unimplemented packet type */
+  case ASTRA_UART_BIND_REQUEST:
+    if (payload_len != sizeof(out_packet->payload.bind_request)) {
+      return false;
+    }
+    memcpy(&out_packet->payload.bind_request, payload_data, payload_len);
+    break;
+  case ASTRA_UART_BIND_RESPONSE:
+    if (payload_len != sizeof(out_packet->payload.bind_response)) {
+      return false;
+    }
+    memcpy(&out_packet->payload.bind_response, payload_data, payload_len);
+    break;
+  case ASTRA_UART_RSSI_VALUE:
+    if (payload_len != sizeof(out_packet->payload.rssi_value)) {
+      return false;
+    }
+    memcpy(&out_packet->payload.rssi_value, payload_data, payload_len);
+    break;
+  default:
+    return false; /* unknown / unimplemented packet type */
   }
 
   return true;
@@ -218,10 +223,8 @@ bool astra_uart_init(void) {
     return false;
   }
 
-  BaseType_t tx_ok = xTaskCreate(uart_tx_task, "astra_uart_tx",
-                                 TASK_STACK_WORDS, NULL, TASK_PRIORITY, NULL);
-  BaseType_t rx_ok = xTaskCreate(uart_rx_task, "astra_uart_rx",
-                                 TASK_STACK_WORDS, NULL, TASK_PRIORITY, NULL);
+  BaseType_t tx_ok = xTaskCreate(uart_tx_task, "astra_uart_tx", TASK_STACK_WORDS, NULL, TASK_PRIORITY, NULL);
+  BaseType_t rx_ok = xTaskCreate(uart_rx_task, "astra_uart_rx", TASK_STACK_WORDS, NULL, TASK_PRIORITY, NULL);
 
   if (tx_ok != pdPASS || rx_ok != pdPASS) {
     DEBUG_PRINT("Failed to create UART tasks\n");
@@ -236,20 +239,14 @@ bool astra_uart_init(void) {
  * Public send / receive API
  * ---------------------------------------------------------------------- */
 
-bool astra_uart_send(const astra_uart_packet_t *packet, uint32_t timeout_ms) {
-  if (!s_initialized || packet == NULL) {
-    return false;
-  }
-
-  TickType_t ticks = (timeout_ms == 0U) ? (TickType_t)0 : pdMS_TO_TICKS(timeout_ms);
-  return xQueueSend(s_tx_queue, packet, ticks) == pdTRUE;
+BaseType_t astra_uart_send(const astra_uart_packet_t *packet, TickType_t timeout) {
+  assert(s_initialized && "astra_uart_send called before astra_uart_init");
+  assert(packet != NULL && "packet must not be NULL");
+  return xQueueSend(s_tx_queue, packet, timeout);
 }
 
-bool astra_uart_receive(astra_uart_packet_t *out_packet, uint32_t timeout_ms) {
-  if (!s_initialized || out_packet == NULL) {
-    return false;
-  }
-
-  TickType_t ticks = (timeout_ms == 0U) ? (TickType_t)0 : pdMS_TO_TICKS(timeout_ms);
-  return xQueueReceive(s_rx_queue, out_packet, ticks) == pdTRUE;
+BaseType_t astra_uart_receive(astra_uart_packet_t *out_packet, TickType_t timeout) {
+  assert(s_initialized && "astra_uart_receive called before astra_uart_init");
+  assert(out_packet != NULL && "out_packet must not be NULL");
+  return xQueueReceive(s_rx_queue, out_packet, timeout);
 }

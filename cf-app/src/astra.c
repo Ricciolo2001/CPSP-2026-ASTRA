@@ -2,6 +2,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "FreeRTOS.h" // IWYU pragma: keep
 
@@ -30,9 +31,73 @@ static uint64_t s_bound_device;
 static int32_t s_bound_device_rssi = -1;
 
 void astra_uart_bind_request_callback(void) {
-  // This callback runs in the context of the param task, so we should not do
-  // any heavy work here. Instead, we can just print a debug message for now.
-  DEBUG_PRINT("Bind request received for device address 0x%012" PRIx64 "\n", s_bound_device);
+  // Copy the bound device address
+  astra_dev_addr_t device_addr;
+  memcpy(device_addr.bytes, &s_bound_device, ASTRA_BLE_ADDR_LEN);
+
+  if (astra_dev_addr_equal(&device_addr, &(astra_dev_addr_t){{0}}) == 0) {
+    astra_uart_packet_t unbind_request = {
+        .type = ASTRA_UART_UNBIND_REQUEST,
+    };
+    astra_uart_send(&unbind_request, portMAX_DELAY);
+    DEBUG_PRINT("Sent unbind request for device %02x:%02x:%02x:%02x:%02x:%02x\n", device_addr.bytes[0],
+                device_addr.bytes[1], device_addr.bytes[2], device_addr.bytes[3], device_addr.bytes[4],
+                device_addr.bytes[5]);
+  } else {
+    // Create a bind request and add it to the ASTRA UART protocol layer's outgoing queue
+    astra_uart_bind_request_t bind_request = {.device_addr = device_addr};
+    astra_uart_packet_t packet = {
+        .type = ASTRA_UART_BIND_REQUEST,
+        .payload.bind_request = bind_request,
+    };
+
+    astra_uart_send(&packet, portMAX_DELAY);
+    DEBUG_PRINT("Sent bind request for device %02x:%02x:%02x:%02x:%02x:%02x\n", device_addr.bytes[0],
+                device_addr.bytes[1], device_addr.bytes[2], device_addr.bytes[3], device_addr.bytes[4],
+                device_addr.bytes[5]);
+  }
+}
+
+void astra_uart_bridge_task(void *params) {
+  (void)params;
+  astra_uart_packet_t packet;
+
+  while (true) {
+    if (!astra_uart_receive(&packet, portMAX_DELAY)) {
+      DEBUG_FMT("Failed to receive packet from ASTRA UART protocol layer\n");
+      continue; // This should never happen since we're blocking indefinitely, but handle it just in case
+    }
+
+    switch (packet.type) {
+    case ASTRA_UART_BIND_RESPONSE:
+      if (packet.payload.bind_response.success) {
+        DEBUG_PRINT("Bind successful!\n");
+      } else {
+        DEBUG_PRINT("Bind failed.\n");
+        s_bound_device = 0; // Clear the bound device on bind failure
+      }
+      break;
+
+    case ASTRA_UART_UNBIND_RESPONSE:
+      if (packet.payload.bind_response.success) {
+        DEBUG_PRINT("Unbind successful!\n");
+      } else {
+        DEBUG_PRINT("Unbind failed.\n");
+      }
+      s_bound_device = 0;       // Clear the bound device regardless of unbind success
+      s_bound_device_rssi = -1; // Clear the RSSI value since we're now unbound
+      break;
+
+    case ASTRA_UART_RSSI_VALUE:
+      s_bound_device_rssi = packet.payload.rssi_value.rssi;
+      DEBUG_PRINT("Received RSSI value: %d dBm\n", s_bound_device_rssi);
+      break;
+
+    default:
+      DEBUG_PRINT("Received unexpected packet type: 0x%02x\n", (unsigned)packet.type);
+      break;
+    }
+  }
 }
 
 void appMain(void) {
@@ -51,6 +116,13 @@ void appMain(void) {
   DEBUG_PRINT("Initializing ASTRA UART protocol layer ...\n");
   if (!astra_uart_init()) {
     DEBUG_PRINT("ERROR: Failed to initialize ASTRA UART protocol layer\n");
+    return;
+  }
+
+  // Take new packets from the ASTRA UART protocol layer
+  if (xTaskCreate(astra_uart_bridge_task, "astra_uart_bridge", ASTRA_BRIDGE_STACK_SIZE, NULL, TASK_PRIORITY, NULL) !=
+      pdPASS) {
+    DEBUG_PRINT("ERROR: Failed to create ASTRA UART bridge task\n");
     return;
   }
 
@@ -76,7 +148,7 @@ PARAM_GROUP_STOP(astra)
 LOG_GROUP_START(astra)
 LOG_ADD(LOG_UINT32, bound_device_low, (uint32_t *)(&s_bound_device))
 LOG_ADD(LOG_UINT16, bound_device_hig, (uint16_t *)(&s_bound_device) + 2)
-LOG_ADD(LOG_UINT32, bound_device_rssi, (uint32_t *)&s_bound_device_rssi)
+LOG_ADD(LOG_INT32, bound_device_rssi, (uint32_t *)&s_bound_device_rssi)
 LOG_GROUP_STOP(astra)
 
 #pragma GCC diagnostic pop
