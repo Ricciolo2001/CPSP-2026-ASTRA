@@ -2,8 +2,10 @@
 
 #include <cmath>
 #include <mutex>
+#include <string.h>
 
 #include "freertos/semaphore.hpp"
+#include <freertos/queue.h>
 
 // ! Da calibrare per il singolo sensore, guardare una guida su come fare (la
 // calibrazione andrebbe fatta ad un metro di distnaza) ! Ovviamente le board
@@ -17,6 +19,8 @@ BleManager &BleManager::instance() {
 }
 
 BleManager::BleManager() : _targetRssiFilter{0} {
+    _rssiQueue = xQueueCreate(kRssiQueueLen, sizeof(astra_uart_rssi_value_t));
+
     NimBLEDevice::init("");
     NimBLEScan *pScan = NimBLEDevice::getScan();
 
@@ -24,7 +28,12 @@ BleManager::BleManager() : _targetRssiFilter{0} {
     pScan->setAdvertisedDeviceCallbacks(this, true);
 }
 
-BleManager::~BleManager() { stopBackgroundScan(); }
+BleManager::~BleManager() {
+    stopBackgroundScan();
+    if (_rssiQueue != nullptr) {
+        vQueueDelete(_rssiQueue);
+    }
+}
 
 void BleManager::applyScanParams(ScanMode mode) {
     NimBLEScan *pScan = NimBLEDevice::getScan();
@@ -62,8 +71,18 @@ void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
     auto addrStr = addr.toString();
 
     if (!_targetAddr.empty() && addrStr == _targetAddr) {
-        _targetRssiFilter.update(advertisedDevice->getRSSI());
+        int8_t rssi = (int8_t)advertisedDevice->getRSSI();
+        _targetRssiFilter.update(rssi);
         _targetLastSeenTime = millis();
+
+        // Push raw observation to the outgoing queue (non-blocking; drop if full).
+        astra_uart_rssi_value_t item{};
+        const uint8_t *val = addr.getNative(); // NimBLE: little-endian (LSB first)
+        for (int i = 0; i < ASTRA_BLE_ADDR_LEN; ++i) {
+            item.device_addr[i] = val[ASTRA_BLE_ADDR_LEN - 1 - i];
+        }
+        item.rssi = rssi;
+        xQueueSend(_rssiQueue, &item, 0);
     }
 }
 
@@ -134,6 +153,20 @@ void BleManager::setTargetDevice(std::string name) {
     _targetAddr = name;
     _targetRssiFilter = EwmaFilter<float>{};
     _targetLastSeenTime = 0;
+    xQueueReset(_rssiQueue);
+}
+
+void BleManager::clearTargetDevice() {
+    std::lock_guard lock(_targetMutex);
+    _targetAddr.clear();
+    _targetRssiFilter = EwmaFilter<float>{};
+    _targetLastSeenTime = 0;
+    xQueueReset(_rssiQueue);
+}
+
+BaseType_t BleManager::receiveRssi(astra_uart_rssi_value_t *out,
+                                   TickType_t timeout) {
+    return xQueueReceive(_rssiQueue, out, timeout);
 }
 
 float BleManager::getTargetRssi() {

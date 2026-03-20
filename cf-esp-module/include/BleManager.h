@@ -8,6 +8,11 @@
 
 #include "EwmaFilter.hpp"
 #include "freertos/semaphore.hpp"
+#include <freertos/queue.h>
+
+extern "C" {
+#include "astra_protocol.h"
+}
 
 /// Represents a BLE device found during scanning.
 struct BleDevice {
@@ -69,6 +74,11 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     /// After setting the target device, the manager will track its RSSI in the
     /// background and make it available via getTargetRssi().
     void setTargetDevice(std::string addr);
+    void clearTargetDevice();
+
+    /// Receive the next RSSI observation pushed by the BLE scan callback.
+    /// Blocks for at most @p timeout ticks; returns pdTRUE on success.
+    BaseType_t receiveRssi(astra_uart_rssi_value_t *out, TickType_t timeout);
 
     /// Get the current RSSI of the target device.
     ///
@@ -118,6 +128,9 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     // Signalled by onManualScanComplete when the manual scan finishes.
     freertos::BinarySemaphore _manualScanDone;
     std::vector<BleDevice> _manualScanResults;
+
+    static constexpr int kRssiQueueLen = 16;
+    QueueHandle_t _rssiQueue = nullptr;
 };
 
 #endif
