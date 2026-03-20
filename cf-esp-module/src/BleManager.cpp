@@ -18,7 +18,7 @@ BleManager &BleManager::instance() {
     return inst;
 }
 
-BleManager::BleManager() : _targetRssiFilter{} {
+BleManager::BleManager() {
     _rssiQueue = xQueueCreate(kRssiQueueLen, sizeof(astra_uart_rssi_value_t));
 
     NimBLEDevice::init("");
@@ -89,11 +89,11 @@ void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
 
     if (advertDevAddr == _targetAddr) {
         int8_t rssi = (int8_t)advertisedDevice->getRSSI();
-        _targetRssiFilter.update(rssi);
+        _targetRssiLast = rssi;
         _targetLastSeenTime = millis();
 
         Serial.printf("Updated target device RSSI: %d, smoothed RSSI: %d\n",
-                      rssi, _targetRssiFilter.get());
+                      rssi, _targetRssiLast);
 
         // Push raw observation to the outgoing queue (non-blocking; drop if
         // full).
@@ -173,7 +173,7 @@ void BleManager::onManualScanComplete(NimBLEScanResults results) {
 void BleManager::setTargetDevice(astra_dev_addr_t name) {
     std::lock_guard lock(_targetMutex);
     _targetAddr = name;
-    _targetRssiFilter = EwmaFilter<float>{};
+    _targetRssiLast = 0;
     _targetLastSeenTime = 0;
     xQueueReset(_rssiQueue);
 }
@@ -181,7 +181,7 @@ void BleManager::setTargetDevice(astra_dev_addr_t name) {
 void BleManager::clearTargetDevice() {
     std::lock_guard lock(_targetMutex);
     _targetAddr = {};
-    _targetRssiFilter = EwmaFilter<float>{};
+    _targetRssiLast = 0;
     _targetLastSeenTime = 0;
     xQueueReset(_rssiQueue);
 }
@@ -199,5 +199,5 @@ float BleManager::getTargetRssi() {
     if (millis() - _targetLastSeenTime > _timeoutMs) {
         return -1.0f;
     }
-    return _targetRssiFilter.get();
+    return _targetRssiLast;
 }

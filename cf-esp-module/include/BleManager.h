@@ -112,7 +112,7 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
 
     freertos::Mutex _targetMutex;
     astra_dev_addr_t _targetAddr{};
-    EwmaFilter<float> _targetRssiFilter;
+    uint8_t _targetRssiLast = 0;
     unsigned long _targetLastSeenTime = 0;
     const uint32_t _timeoutMs = 10000;
 
