@@ -1,4 +1,9 @@
-obj-y += astra.o crtp_uart2_bridge.o
+obj-y += astra.o \
+         astra_uart.o \
+         uart_framing.o \
+         crtp_uart2_bridge.o \
+         cobs.o \
+         crc16.o \
 
 # Standards & Base Warnings
 ccflags-y += -std=gnu11 -O2 \
