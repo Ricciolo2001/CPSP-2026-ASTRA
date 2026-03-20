@@ -1,0 +1,85 @@
+<mxfile host="65bd71144e">
+    <diagram id="PEQzn_hTyvguTPG9--X0" name="Page-1">
+        <mxGraphModel dx="1315" dy="1003" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="22" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeWidth=3;" edge="1" parent="1" source="3" target="4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="&lt;h1&gt;CF&lt;/h1&gt;" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;arcSize=10;" vertex="1" parent="1">
+                    <mxGeometry x="910" y="20" width="310" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="&lt;h1&gt;PC&lt;/h1&gt;" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="1">
+                    <mxGeometry x="1340" y="40" width="310" height="230" as="geometry"/>
+                </mxCell>
+                <mxCell id="9" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;entryX=0;entryY=0.25;entryDx=0;entryDy=0;strokeWidth=3;" edge="1" parent="1" source="6" target="3">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="17" value="NRF legge da uart e decide su quale bus inviare (stupido smistatore di queues)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="930" y="90" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="18" value="Logging come push gestito dalla CF" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="1090" y="90" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="23" value="Comunicazione con protocolli stupidi CF" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="1360" y="100" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="25" value="Utilizzo di client python" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="1510" y="100" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="26" value="Comoditá&lt;div&gt;e&lt;/div&gt;&lt;div&gt;Potenza powwaaaa&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="1435" y="182.5" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="27" value="" style="group" vertex="1" connectable="0" parent="1">
+                    <mxGeometry x="250" y="30" width="460" height="290" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="&lt;h1&gt;ESP&lt;/h1&gt;" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="27">
+                    <mxGeometry width="460" height="290" as="geometry"/>
+                </mxCell>
+                <mxCell id="6" value="&lt;h3&gt;Scambio di dati&lt;/h3&gt;" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;arcSize=6;" vertex="1" parent="27">
+                    <mxGeometry x="220" y="60" width="230" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" value="Struct in C" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="27">
+                    <mxGeometry x="355" y="110" width="70" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="10" value="Uart come bus" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="27">
+                    <mxGeometry x="240" y="160" width="70" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" value="COBS per encoding (contine CRC)" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="27">
+                    <mxGeometry x="330" y="150" width="110" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="13" value="Struttura a pacchetto" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="27">
+                    <mxGeometry x="240" y="110" width="70" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="14" value="&lt;h3&gt;Protocollo wireless&lt;/h3&gt;" style="rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;arcSize=6;" vertex="1" parent="27">
+                    <mxGeometry x="30" y="60" width="170" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="19" value="BLE scanning senza binding" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="27">
+                    <mxGeometry x="40" y="105" width="100" height="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="20" value="SSI giá noto a priori" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="27">
+                    <mxGeometry x="100" y="170" width="90" height="45" as="geometry"/>
+                </mxCell>
+                <mxCell id="28" value="Eyad" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1">
+                    <mxGeometry x="1070" y="400" width="30" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="33" value="" style="group;rotation=15;" vertex="1" connectable="0" parent="1">
+                    <mxGeometry x="930" y="360" width="128.06" height="98.1" as="geometry"/>
+                </mxCell>
+                <mxCell id="32" value="" style="triangle;whiteSpace=wrap;html=1;rotation=120;" vertex="1" parent="33">
+                    <mxGeometry x="-12.102935521274466" y="56.62919877387128" width="41.070521590788616" height="26.106340786717162" as="geometry"/>
+                </mxCell>
+                <mxCell id="30" value="" style="shape=or;whiteSpace=wrap;html=1;rotation=15;" vertex="1" parent="33">
+                    <mxGeometry x="80.3057380579999" y="46.839320978852335" width="41.070521590788616" height="39.15951118007575" as="geometry"/>
+                </mxCell>
+                <mxCell id="31" value="" style="triangle;whiteSpace=wrap;html=1;rotation=-90;" vertex="1" parent="33">
+                    <mxGeometry x="1.5872383423217373" y="4.416517200436947" width="41.070521590788616" height="26.106340786717162" as="geometry"/>
+                </mxCell>
+                <mxCell id="29" value="From iran" style="rounded=0;whiteSpace=wrap;html=1;rotation=15;" vertex="1" parent="33">
+                    <mxGeometry x="0.21822095596211677" y="31.175516506822042" width="82.14104318157723" height="39.15951118007575" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
