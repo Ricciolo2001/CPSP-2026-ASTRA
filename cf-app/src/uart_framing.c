@@ -1,9 +1,13 @@
 #include "uart_framing.h"
 
+#include <assert.h>
 #include <string.h>
 
 #include "cobs.h"
 #include "crc16.h"
+
+#define DEBUG_MODULE "UART_FRAMING"
+#include "debug.h"
 
 /**
  * Frame layout (before the 0x00 delimiter):
@@ -59,12 +63,13 @@ size_t uart_frame_encode(const uint8_t *payload, size_t payload_len, uint8_t *ou
 }
 
 bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payload, size_t out_max, size_t *out_len) {
-  if (frame == NULL || out_payload == NULL || out_len == NULL) {
-    return false;
-  }
+  assert(frame != NULL && "frame pointer is NULL");
+  assert(out_payload != NULL && "out_payload pointer is NULL");
+  assert(out_len != NULL && "out_len pointer is NULL");
 
   /* Need at least the COBS code byte + two CRC bytes + delimiter. */
   if (frame_len < (COBS_OVERHEAD + CRC_SIZE + DELIMITER_SIZE)) {
+    DEBUG_PRINT("Frame too short: %d bytes (minimum is %d)\n", frame_len, COBS_OVERHEAD + CRC_SIZE + DELIMITER_SIZE);
     return false;
   }
 
@@ -76,8 +81,12 @@ bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payl
   size_t decoded_len = 0;
 
   cobs_status_t status = cobs_decode(frame, cobs_input_len, decoded, sizeof(decoded), &decoded_len);
-
-  if (status != COBS_RET_OK || decoded_len < MIN_DECODED_LEN) {
+  if (status != COBS_RET_OK) {
+    DEBUG_PRINT("COBS decode failed: status=%d\n", (int)status);
+    return false;
+  }
+  if (decoded_len < MIN_DECODED_LEN) {
+    DEBUG_PRINT("Decoded output too short: %d bytes (minimum is %d)\n", decoded_len, MIN_DECODED_LEN);
     return false;
   }
 
@@ -85,6 +94,7 @@ bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payl
   size_t payload_len = decoded_len - CRC_SIZE;
 
   if (payload_len > out_max) {
+    DEBUG_PRINT("Payload too large for output buffer: %d bytes (max is %d)\n", payload_len, out_max);
     return false; /* caller's buffer too small for the payload */
   }
 
@@ -95,6 +105,7 @@ bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payl
   uint16_t calculated_crc = crc16_compute(decoded, payload_len);
 
   if (received_crc != calculated_crc) {
+    DEBUG_PRINT("CRC check failed: received 0x%04x, calculated 0x%04x\n", received_crc, calculated_crc);
     return false;
   }
 

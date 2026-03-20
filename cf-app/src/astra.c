@@ -31,6 +31,7 @@ static uint64_t s_bound_device;
 static int32_t s_bound_device_rssi = -1;
 
 void astra_uart_bind_request_callback(void) {
+
   // Copy the bound device address
   astra_dev_addr_t device_addr;
   memcpy(device_addr.bytes, &s_bound_device, ASTRA_BLE_ADDR_LEN);
@@ -64,7 +65,7 @@ void astra_uart_bridge_task(void *params) {
 
   while (true) {
     if (!astra_uart_receive(&packet, portMAX_DELAY)) {
-      DEBUG_FMT("Failed to receive packet from ASTRA UART protocol layer\n");
+      DEBUG_PRINT("Failed to receive packet from ASTRA UART protocol layer\n");
       continue; // This should never happen since we're blocking indefinitely, but handle it just in case
     }
 
@@ -90,7 +91,7 @@ void astra_uart_bridge_task(void *params) {
 
     case ASTRA_UART_RSSI_VALUE:
       s_bound_device_rssi = packet.payload.rssi_value.rssi;
-      DEBUG_PRINT("Received RSSI value: %d dBm\n", s_bound_device_rssi);
+      DEBUG_PRINT("Received RSSI value: %d dBm\n", (int)s_bound_device_rssi);
       break;
 
     default:
@@ -120,8 +121,8 @@ void appMain(void) {
   }
 
   // Take new packets from the ASTRA UART protocol layer
-  if (xTaskCreate(astra_uart_bridge_task, "astra_uart_bridge", ASTRA_BRIDGE_STACK_SIZE, NULL, TASK_PRIORITY, NULL) !=
-      pdPASS) {
+  if (xTaskCreate(astra_uart_bridge_task, "astra_uart_bridge", ASTRA_BRIDGE_STACK_SIZE, NULL, CONFIG_APP_PRIORITY,
+                  NULL) != pdPASS) {
     DEBUG_PRINT("ERROR: Failed to create ASTRA UART bridge task\n");
     return;
   }
@@ -137,7 +138,7 @@ void appMain(void) {
 // Parameters
 // ------------------------------------------------------------------------
 PARAM_GROUP_START(astra)
-PARAM_ADD_WITH_CALLBACK(PARAM_UINT32, bound_device_low, (uint32_t *)(&s_bound_device), astra_uart_bind_request_callback)
+PARAM_ADD(PARAM_UINT32, bound_device_low, (uint32_t *)(&s_bound_device))
 PARAM_ADD_WITH_CALLBACK(PARAM_UINT16, bound_device_hig, (uint16_t *)(&s_bound_device) + 2,
                         astra_uart_bind_request_callback)
 PARAM_GROUP_STOP(astra)

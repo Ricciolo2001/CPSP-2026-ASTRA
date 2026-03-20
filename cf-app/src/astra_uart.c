@@ -175,18 +175,44 @@ static void uart_tx_task(void *params) {
   }
 }
 
+/**
+ * @brief Reads bytes from UART into @p out_buf until the @p delimiter is found or @p max_len is reached.
+ */
+static int read_until_char(uint8_t delimiter, uint8_t *out_buf, size_t max_len) {
+  size_t idx = 0;
+  while (idx < max_len) {
+    uint8_t byte;
+    int result = uart2GetData(1, &byte);
+    if (result <= 0) {
+      return -1; /* error or no data */
+    }
+    if (byte == delimiter) {
+      return (int)idx; /* return length of data read, excluding delimiter */
+    }
+    out_buf[idx++] = byte;
+  }
+  return -1; /* buffer overflow without finding delimiter */
+}
+
 static void uart_rx_task(void *params) {
   (void)params;
 
   uint8_t frame_buf[FRAME_BUF_SIZE];
   uint8_t raw_buf[RAW_BUF_SIZE];
 
-  while (1) {
-    int received = uart2GetData(sizeof(frame_buf), frame_buf);
+  while (true) {
+    // Read until the 0x00 delimiter (delimiter is consumed but not stored in frame_buf)
+    int received = read_until_char(0x00, frame_buf, sizeof(frame_buf));
     if (received <= 0) {
+      DEBUG_PRINT("RX: uart2GetData failed or returned no data\n");
       continue;
     }
-    size_t frame_len = (size_t)received;
+    /* uart_frame_decode expects frame_len to include the trailing 0x00
+     * delimiter, but read_until_char strips it and does not count it.
+     * Add 1 to restore the expected length. */
+    size_t frame_len = (size_t)received + 1U;
+
+    DEBUG_PRINT("RX: received %d bytes\n", received);
 
     size_t raw_len = 0;
     if (!uart_frame_decode(frame_buf, frame_len, raw_buf, sizeof(raw_buf), &raw_len)) {
