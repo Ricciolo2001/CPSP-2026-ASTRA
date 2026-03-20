@@ -28,11 +28,11 @@ static const UartPort::Config kUartConfig = {
  * Helpers
  * ---------------------------------------------------------------------- */
 
-/// Convert a raw 6-byte BLE address (MSB first) to "AA:BB:CC:DD:EE:FF".
+/// Convert a raw 6-byte BLE address (LSB first) to "AA:BB:CC:DD:EE:FF".
 static std::string addrBytesToString(const astra_dev_addr_t addr) {
     char buf[18];
     snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
-             addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
+             addr.bytes[5], addr.bytes[4], addr.bytes[3], addr.bytes[2], addr.bytes[1], addr.bytes[0]);
     return buf;
 }
 
@@ -45,15 +45,15 @@ static void handlePacket(AstraUart &uart, BleManager &ble,
     switch ((astra_uart_packet_type_t)pkt.type) {
 
     case ASTRA_UART_BIND_REQUEST: {
-        std::string addr =
-            addrBytesToString(pkt.payload.bind_request.device_addr);
-        Serial.printf("CMD BIND → %s\n", addr.c_str());
-        ble.setTargetDevice(std::move(addr));
+        astra_dev_addr_t addr = pkt.payload.bind_request.device_addr;
+        Serial.printf("CMD BIND → %s\n", addrBytesToString(addr).c_str());
+        ble.setTargetDevice(addr);
 
         astra_uart_packet_t resp{};
         resp.type = ASTRA_UART_BIND_RESPONSE;
         resp.payload.bind_response.success = true;
         uart.send(&resp, 0);
+        Serial.println("Sent BIND_RESPONSE");
         break;
     }
 
@@ -87,6 +87,7 @@ static void dispatch_task(void *) {
         // loop responsive without busy-waiting).
         astra_uart_packet_t pkt{};
         if (uart.receive(&pkt, pdMS_TO_TICKS(10)) == pdTRUE) {
+            Serial.println("Received command packet over UART");
             handlePacket(uart, ble, pkt);
         }
 
@@ -94,6 +95,9 @@ static void dispatch_task(void *) {
         // forward each one as an RSSI packet over UART.
         astra_uart_rssi_value_t rssi{};
         while (ble.receiveRssi(&rssi, 0) == pdTRUE) {
+            Serial.println("New RSSI observation: " + String(rssi.rssi) +
+                           " from " +
+                           addrBytesToString(rssi.device_addr).c_str());
             astra_uart_packet_t out{};
             out.type = ASTRA_UART_RSSI_VALUE;
             out.payload.rssi_value = rssi;
@@ -126,4 +130,3 @@ void setup() {
 void loop() {
     // Never called — the Arduino loop task is deleted in setup().
 }
-

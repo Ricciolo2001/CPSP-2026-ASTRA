@@ -1,5 +1,6 @@
 #include "astra_uart.hpp"
 
+#include "Arduino.h"
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
 #include <string.h>
@@ -168,6 +169,17 @@ BaseType_t AstraUart::send(const astra_uart_packet_t *packet,
     return (written == (int)frame_len) ? pdTRUE : pdFALSE;
 }
 
+namespace {
+void print_raw_bytes(const uint8_t *data, size_t len) {
+    Serial.print("Raw bytes: ");
+    for (size_t i = 0; i < len; ++i) {
+        Serial.printf("%02x ", data[i]);
+    }
+    Serial.println();
+}
+
+} // namespace
+
 BaseType_t AstraUart::receive(astra_uart_packet_t *out_packet,
                               TickType_t timeout) {
     assert(out_packet != nullptr && "out_packet must not be NULL");
@@ -175,21 +187,63 @@ BaseType_t AstraUart::receive(astra_uart_packet_t *out_packet,
     uint8_t frame_buf[FRAME_BUF_SIZE];
     uint8_t raw_buf[RAW_BUF_SIZE];
 
-    int received = uart_port_.read(frame_buf, sizeof(frame_buf), timeout);
+    int received =
+        (int)read_until_delimiter(frame_buf, sizeof(frame_buf), timeout);
     if (received <= 0) {
         return pdFALSE;
     }
+
     size_t frame_len = (size_t)received;
 
     size_t raw_len = 0;
     if (!uart_frame_decode(frame_buf, frame_len, raw_buf, sizeof(raw_buf),
                            &raw_len)) {
+        Serial.println("Failed to decode UART frame");
+        print_raw_bytes(frame_buf, frame_len);
         return pdFALSE;
     }
 
     if (!astra_uart_deserialize(raw_buf, raw_len, out_packet)) {
+        Serial.println("Failed to deserialize UART packet");
+        print_raw_bytes(raw_buf, raw_len);
         return pdFALSE;
     }
 
     return pdTRUE;
+}
+
+constexpr char astra_pkt_delimiter = '\x00';
+
+uint32_t AstraUart::read_until_delimiter(uint8_t *buf, size_t max_len,
+                                         TickType_t timeout) {
+    size_t idx = 0;
+    TickType_t start_tick = xTaskGetTickCount();
+
+    while (idx < max_len) {
+        // Calculate remaining time in our "budget"
+        TickType_t elapsed = xTaskGetTickCount() - start_tick;
+        if (elapsed >= timeout) {
+            break;
+        }
+        TickType_t remaining = timeout - elapsed;
+
+        // Read a single byte
+        int read = uart_port_.read(buf + idx, 1, remaining);
+
+        if (read < 0) {
+            return 0; // Hardware/Driver Error
+        } else if (read == 0) {
+            break; // Individual byte read timed out
+        }
+
+        // We successfully read a byte, so increment the index
+        idx++;
+
+        // Check if the byte we JUST read (at idx-1) is the delimiter
+        if (buf[idx - 1] == (uint8_t)astra_pkt_delimiter) {
+            return idx; // Found delimiter, return count including it
+        }
+    }
+
+    return idx; // Return bytes read (timeout or buffer full)
 }

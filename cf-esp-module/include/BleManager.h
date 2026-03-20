@@ -73,7 +73,7 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     ///
     /// After setting the target device, the manager will track its RSSI in the
     /// background and make it available via getTargetRssi().
-    void setTargetDevice(std::string addr);
+    void setTargetDevice(astra_dev_addr_t name);
     void clearTargetDevice();
 
     /// Receive the next RSSI observation pushed by the BLE scan callback.
@@ -111,7 +111,7 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     // Target related state
 
     freertos::Mutex _targetMutex;
-    std::string _targetAddr;
+    astra_dev_addr_t _targetAddr{};
     EwmaFilter<float> _targetRssiFilter;
     unsigned long _targetLastSeenTime = 0;
     const uint32_t _timeoutMs = 10000;

@@ -1,11 +1,11 @@
 #include "BleManager.h"
 
 #include <cmath>
+#include <cstring>
 #include <mutex>
-#include <string.h>
 
-#include "freertos/semaphore.hpp"
 #include <freertos/queue.h>
+#include <freertos/semaphore.hpp>
 
 // ! Da calibrare per il singolo sensore, guardare una guida su come fare (la
 // calibrazione andrebbe fatta ad un metro di distnaza) ! Ovviamente le board
@@ -18,7 +18,7 @@ BleManager &BleManager::instance() {
     return inst;
 }
 
-BleManager::BleManager() : _targetRssiFilter{0} {
+BleManager::BleManager() : _targetRssiFilter{} {
     _rssiQueue = xQueueCreate(kRssiQueueLen, sizeof(astra_uart_rssi_value_t));
 
     NimBLEDevice::init("");
@@ -64,22 +64,44 @@ void BleManager::stopBackgroundScan() {
     _bgScanStopped.take(pdMS_TO_TICKS(_bgScanPeriodMs + 1000));
 }
 
+bool operator==(const astra_dev_addr_t &lhs, const astra_dev_addr_t &rhs) {
+    return std::memcmp(lhs.bytes, rhs.bytes, ASTRA_BLE_ADDR_LEN) == 0;
+}
+
+// It is good practice to also provide the inequality operator
+bool operator!=(const astra_dev_addr_t &lhs, const astra_dev_addr_t &rhs) {
+    return !(lhs == rhs);
+}
+
 void BleManager::onResult(NimBLEAdvertisedDevice *advertisedDevice) {
     std::lock_guard lock(_targetMutex);
 
-    auto addr = advertisedDevice->getAddress();
-    auto addrStr = addr.toString();
+    auto nimbleAddr = advertisedDevice->getAddress();
 
-    if (!_targetAddr.empty() && addrStr == _targetAddr) {
+    // NimBLE: little-endian (LSB first)
+    const uint8_t *val = nimbleAddr.getNative();
+
+    // Convert to astra_dev_addr_t
+    astra_dev_addr_t advertDevAddr{};
+    for (int i = 0; i < ASTRA_BLE_ADDR_LEN; ++i) {
+        advertDevAddr.bytes[i] = val[i];
+    }
+
+    if (advertDevAddr == _targetAddr) {
         int8_t rssi = (int8_t)advertisedDevice->getRSSI();
         _targetRssiFilter.update(rssi);
         _targetLastSeenTime = millis();
 
-        // Push raw observation to the outgoing queue (non-blocking; drop if full).
+        Serial.printf("Updated target device RSSI: %d, smoothed RSSI: %d\n",
+                      rssi, _targetRssiFilter.get());
+
+        // Push raw observation to the outgoing queue (non-blocking; drop if
+        // full).
         astra_uart_rssi_value_t item{};
-        const uint8_t *val = addr.getNative(); // NimBLE: little-endian (LSB first)
+        const uint8_t *val =
+            nimbleAddr.getNative(); // NimBLE: little-endian (LSB first)
         for (int i = 0; i < ASTRA_BLE_ADDR_LEN; ++i) {
-            item.device_addr[i] = val[ASTRA_BLE_ADDR_LEN - 1 - i];
+            item.device_addr.bytes[i] = val[ASTRA_BLE_ADDR_LEN - 1 - i];
         }
         item.rssi = rssi;
         xQueueSend(_rssiQueue, &item, 0);
@@ -148,7 +170,7 @@ void BleManager::onManualScanComplete(NimBLEScanResults results) {
     instance().startBackgroundScan();
 }
 
-void BleManager::setTargetDevice(std::string name) {
+void BleManager::setTargetDevice(astra_dev_addr_t name) {
     std::lock_guard lock(_targetMutex);
     _targetAddr = name;
     _targetRssiFilter = EwmaFilter<float>{};
@@ -158,7 +180,7 @@ void BleManager::setTargetDevice(std::string name) {
 
 void BleManager::clearTargetDevice() {
     std::lock_guard lock(_targetMutex);
-    _targetAddr.clear();
+    _targetAddr = {};
     _targetRssiFilter = EwmaFilter<float>{};
     _targetLastSeenTime = 0;
     xQueueReset(_rssiQueue);
@@ -171,7 +193,7 @@ BaseType_t BleManager::receiveRssi(astra_uart_rssi_value_t *out,
 
 float BleManager::getTargetRssi() {
     std::lock_guard lock(_targetMutex);
-    if (_targetAddr.empty()) {
+    if (_targetAddr.bytes == std::array<uint8_t, ASTRA_BLE_ADDR_LEN>{}.data()) {
         return -1.0f;
     }
     if (millis() - _targetLastSeenTime > _timeoutMs) {

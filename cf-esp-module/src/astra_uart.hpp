@@ -18,4 +18,6 @@ class AstraUart {
 
   private:
     UartPort uart_port_;
+
+    uint32_t read_until_delimiter(uint8_t *buf, size_t max_len, TickType_t timeout);
 };

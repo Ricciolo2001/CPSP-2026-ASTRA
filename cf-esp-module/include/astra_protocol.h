@@ -10,7 +10,9 @@
 
 #define ASTRA_BLE_ADDR_LEN 6
 
-typedef uint8_t astra_dev_addr_t[ASTRA_BLE_ADDR_LEN];
+typedef struct __attribute__((packed)) {
+    uint8_t bytes[ASTRA_BLE_ADDR_LEN];
+} astra_dev_addr_t;
 
 /* -------------------------------------------------------------------------
  * Packet types
