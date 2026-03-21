@@ -2,8 +2,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include "BleManager.hpp"
 #include "AstraUart.hpp"
+#include "BleManager.hpp"
 
 /* -------------------------------------------------------------------------
  * UART hardware configuration
@@ -43,6 +43,7 @@ static std::string addrBytesToString(const astra_dev_addr_t addr) {
 
 static void handlePacket(AstraUart &uart, BleManager &ble,
                          const astra_uart_packet_t &pkt) {
+
     switch ((astra_uart_packet_type_t)pkt.type) {
 
     case ASTRA_UART_BIND_REQUEST: {
@@ -53,8 +54,7 @@ static void handlePacket(AstraUart &uart, BleManager &ble,
         astra_uart_packet_t resp{};
         resp.type = ASTRA_UART_BIND_RESPONSE;
         resp.payload.bind_response.success = true;
-        uart.send(&resp, 0);
-        Serial.println("Sent BIND_RESPONSE");
+        uart.send(resp);
         break;
     }
 
@@ -64,8 +64,7 @@ static void handlePacket(AstraUart &uart, BleManager &ble,
 
         astra_uart_packet_t resp{};
         resp.type = ASTRA_UART_UNBIND_RESPONSE;
-        resp.payload.bind_response.success = true;
-        uart.send(&resp, 0);
+        uart.send(resp);
         break;
     }
 
@@ -87,7 +86,7 @@ static void dispatch_task(void *) {
         // Handle one incoming command per iteration (10 ms timeout keeps the
         // loop responsive without busy-waiting).
         astra_uart_packet_t pkt{};
-        if (uart.receive(&pkt, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (uart.receive(pkt, pdMS_TO_TICKS(10)) == pdTRUE) {
             Serial.println("Received command packet over UART");
             handlePacket(uart, ble, pkt);
         }
@@ -102,7 +101,7 @@ static void dispatch_task(void *) {
             astra_uart_packet_t out{};
             out.type = ASTRA_UART_RSSI_VALUE;
             out.payload.rssi_value = rssi;
-            uart.send(&out, 0);
+            uart.send(out);
         }
     }
 }

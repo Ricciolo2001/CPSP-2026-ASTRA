@@ -4,10 +4,9 @@
 #include <string>
 #include <vector>
 
-#include <EwmaFilter.hpp>
 #include <NimBLEDevice.h>
+#include <freertos/Queue.hpp>
 #include <freertos/Semaphore.hpp>
-#include <freertos/queue.h>
 
 extern "C" {
 #include "protocol/astra_proto.h"
@@ -27,9 +26,7 @@ struct BleDevice {
           serviceUUID(std::move(su)), serviceData(std::move(sd)) {}
 };
 
-/// Manages BLE scanning and tracking of a target device's RSSI.
-///
-/// Remember to call `init()` before using, otherwise the behavior is undefined.
+/// @brief Manages BLE scanning and tracking of a target device's RSSI.
 ///
 /// This class is a singleton that interfaces with the NimBLE library to perform
 /// BLE scans. It supports both continuous background scanning (for tracking a
@@ -72,18 +69,17 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     ///
     /// After setting the target device, the manager will track its RSSI in the
     /// background and make it available via getTargetRssi().
-    void setTargetDevice(astra_dev_addr_t name);
+    void setTargetDevice(astra_dev_addr_t addr);
     void clearTargetDevice();
 
     /// Receive the next RSSI observation pushed by the BLE scan callback.
     /// Blocks for at most @p timeout ticks; returns pdTRUE on success.
     BaseType_t receiveRssi(astra_uart_rssi_value_t *out, TickType_t timeout);
 
-    /// Get the current RSSI of the target device.
+    /// Get the last observed RSSI of the target device.
     ///
-    /// Returns the smoothed RSSI value based on recent samples.
-    /// If the target device was never seen or hasn't been seen for a while,
-    /// returns -1.
+    /// Returns the most recent raw RSSI sample.
+    /// If no target is set or the device hasn't been seen recently, returns -1.
     float getTargetRssi();
 
   private:
@@ -109,25 +105,25 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
 
     // Target related state
 
-    freertos::Mutex _targetMutex;
-    astra_dev_addr_t _targetAddr{};
-    uint8_t _targetRssiLast = 0;
-    unsigned long _targetLastSeenTime = 0;
-    const uint32_t _timeoutMs = 10000;
+    freertos::Mutex targetMutex_;
+    astra_dev_addr_t targetAddr_{};
+    int8_t targetRssiLast_ = 0;
+    unsigned long targetLastSeenTime_ = 0;
+    const uint32_t timeoutMs_ = 10000;
 
     /// While true, the background scan is active and onBgScanComplete should
     /// restart itself. When set to false, onBgScanComplete will signal that the
     /// background scan has fully stopped.
-    std::atomic<bool> _bgScanActive{false};
-    const uint32_t _bgScanPeriodMs = 1000;
+    std::atomic<bool> bgScanActive_{false};
+    const uint32_t bgScanPeriodMs_ = 1000;
 
     // Signalled by onBgScanComplete when it decides NOT to restart (bg scan
     // fully stopped).
-    freertos::BinarySemaphore _bgScanStopped;
+    freertos::BinarySemaphore bgScanStopped_;
     // Signalled by onManualScanComplete when the manual scan finishes.
-    freertos::BinarySemaphore _manualScanDone;
-    std::vector<BleDevice> _manualScanResults;
+    freertos::BinarySemaphore manualScanDone_;
+    std::vector<BleDevice> manualScanResults_;
 
     static constexpr int kRssiQueueLen = 16;
-    QueueHandle_t _rssiQueue = nullptr;
+    freertos::Queue<astra_uart_rssi_value_t> rssiQueue_{kRssiQueueLen};
 };
