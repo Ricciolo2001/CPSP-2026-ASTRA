@@ -7,7 +7,7 @@
 #include "lib/crc16.h"
 
 #define DEBUG_MODULE "UART_FRAMING"
-#include "debug.h"
+#include "astra_debug.h"
 
 /**
  * Frame layout (before the 0x00 delimiter):
