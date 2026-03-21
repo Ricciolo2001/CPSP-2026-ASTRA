@@ -1,11 +1,11 @@
-#include "BleManager.h"
+#include "BleManager.hpp"
 
 #include <cmath>
 #include <cstring>
 #include <mutex>
 
 #include <freertos/queue.h>
-#include <freertos/semaphore.hpp>
+#include <freertos/Semaphore.hpp>
 
 // ! Da calibrare per il singolo sensore, guardare una guida su come fare (la
 // calibrazione andrebbe fatta ad un metro di distnaza) ! Ovviamente le board

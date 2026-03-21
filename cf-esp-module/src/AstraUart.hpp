@@ -1,10 +1,10 @@
 #pragma once
 
-extern "C" {
-#include "astra_protocol.h"
-};
+#include "UartPort.hpp"
 
-#include "UartPort.h"
+extern "C" {
+#include "protocol/astra_proto.h"
+}
 
 class AstraUart {
   public:
@@ -19,5 +19,6 @@ class AstraUart {
   private:
     UartPort uart_port_;
 
-    uint32_t read_until_delimiter(uint8_t *buf, size_t max_len, TickType_t timeout);
+    uint32_t read_until_delimiter(uint8_t *buf, size_t max_len,
+                                  TickType_t timeout);
 };

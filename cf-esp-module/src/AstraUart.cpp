@@ -1,11 +1,13 @@
-#include "astra_uart.hpp"
+#include "AstraUart.hpp"
 
 #include "Arduino.h"
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
 #include <string.h>
 
-#include "uart_framing.h"
+extern "C" {
+#include "transport/uart_framing.h"
+}
 
 /* -------------------------------------------------------------------------
  * Internal constants

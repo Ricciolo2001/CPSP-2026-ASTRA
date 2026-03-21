@@ -1,17 +1,16 @@
-#ifndef BLE_MANAGER_H
-#define BLE_MANAGER_H
+#pragma once
 
-#include <NimBLEDevice.h>
 #include <atomic>
 #include <string>
 #include <vector>
 
-#include "EwmaFilter.hpp"
-#include "freertos/semaphore.hpp"
+#include <EwmaFilter.hpp>
+#include <NimBLEDevice.h>
+#include <freertos/Semaphore.hpp>
 #include <freertos/queue.h>
 
 extern "C" {
-#include "astra_protocol.h"
+#include "protocol/astra_proto.h"
 }
 
 /// Represents a BLE device found during scanning.
@@ -132,5 +131,3 @@ class BleManager : public NimBLEAdvertisedDeviceCallbacks {
     static constexpr int kRssiQueueLen = 16;
     QueueHandle_t _rssiQueue = nullptr;
 };
-
-#endif

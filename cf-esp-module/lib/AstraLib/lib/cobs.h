@@ -11,14 +11,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 typedef enum {
-    COBS_RET_OK = 0,
-    COBS_RET_ERR_BAD_PAYLOAD,
-    COBS_RET_ERR_BUFFER_OVERFLOW,
+  COBS_RET_OK = 0,
+  COBS_RET_ERR_BAD_PAYLOAD,
+  COBS_RET_ERR_BUFFER_OVERFLOW,
 } cobs_status_t;
 
 /**
@@ -29,17 +25,11 @@ typedef enum {
  * @param dst_max Max size of destination buffer.
  * @param out_len Pointer to store the resulting encoded length.
  */
-cobs_status_t cobs_encode(const uint8_t *restrict src, size_t src_len,
-                          uint8_t *restrict dst, size_t dst_max,
+cobs_status_t cobs_encode(const uint8_t *restrict src, size_t src_len, uint8_t *restrict dst, size_t dst_max,
                           size_t *out_len);
 
 /**
  * @brief Decodes COBS data with bounds checking.
  */
-cobs_status_t cobs_decode(const uint8_t *restrict src, size_t src_len,
-                          uint8_t *restrict dst, size_t dst_max,
+cobs_status_t cobs_decode(const uint8_t *restrict src, size_t src_len, uint8_t *restrict dst, size_t dst_max,
                           size_t *out_len);
-
-#ifdef __cplusplus
-}
-#endif

@@ -3,16 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * @brief CRC16 context
  * Opaque object containing the current state of the calculation.
  */
 typedef struct {
-    uint16_t remainder;
+  uint16_t remainder;
 } crc16_ctx_t;
 
 /**
@@ -34,7 +30,3 @@ uint16_t crc16_finalize(const crc16_ctx_t *ctx);
  * @brief Convenience function for one-shot calculation
  */
 uint16_t crc16_compute(const void *data, size_t size);
-
-#ifdef __cplusplus
-}
-#endif

@@ -15,24 +15,18 @@
  *   raw payload  ->  append CRC16  ->  COBS encode  ->  append 0x00
  *
  * Decoding pipeline (RX):
- *   received bytes  ->  strip 0x00  ->  COBS decode  ->  verify CRC16  ->  raw
- * payload
+ *   received bytes  ->  strip 0x00  ->  COBS decode  ->  verify CRC16  ->  raw payload
  */
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
  * @brief Encodes a raw payload into a framed UART packet.
  *
  * Appends a CRC16 checksum to @p payload, encodes the result with COBS, and
- * appends a 0x00 frame delimiter.  The entire output is written into @p
- * out_buf.
+ * appends a 0x00 frame delimiter.  The entire output is written into @p out_buf.
  *
  * @param payload      Pointer to the raw payload bytes.
  * @param payload_len  Length of the raw payload in bytes.
@@ -43,8 +37,7 @@ extern "C" {
  *         delimiter), or 0 on error (e.g. output buffer too small, COBS
  *         encoding failure).
  */
-size_t uart_frame_encode(const uint8_t *payload, size_t payload_len,
-                         uint8_t *out_buf, size_t out_max);
+size_t uart_frame_encode(const uint8_t *payload, size_t payload_len, uint8_t *out_buf, size_t out_max);
 
 /**
  * @brief Decodes a framed UART packet back into its raw payload.
@@ -62,9 +55,4 @@ size_t uart_frame_encode(const uint8_t *payload, size_t payload_len,
  *
  * @return true if decoding and CRC verification succeeded, false otherwise.
  */
-bool uart_frame_decode(const uint8_t *frame, size_t frame_len,
-                       uint8_t *out_payload, size_t out_max, size_t *out_len);
-
-#ifdef __cplusplus
-}
-#endif
+bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payload, size_t out_max, size_t *out_len);

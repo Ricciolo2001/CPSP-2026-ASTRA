@@ -2,8 +2,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
-#include "BleManager.h"
-#include "astra_uart.hpp"
+#include "BleManager.hpp"
+#include "AstraUart.hpp"
 
 /* -------------------------------------------------------------------------
  * UART hardware configuration
@@ -31,8 +31,9 @@ static const UartPort::Config kUartConfig = {
 /// Convert a raw 6-byte BLE address (LSB first) to "AA:BB:CC:DD:EE:FF".
 static std::string addrBytesToString(const astra_dev_addr_t addr) {
     char buf[18];
-    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
-             addr.bytes[5], addr.bytes[4], addr.bytes[3], addr.bytes[2], addr.bytes[1], addr.bytes[0]);
+    snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X", addr.bytes[5],
+             addr.bytes[4], addr.bytes[3], addr.bytes[2], addr.bytes[1],
+             addr.bytes[0]);
     return buf;
 }
 

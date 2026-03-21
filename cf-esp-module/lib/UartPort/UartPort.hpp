@@ -4,9 +4,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <string>
+
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
-#include <string>
 
 // Thin RAII wrapper around the ESP-IDF UART C primitives.
 // Responsible only for hardware configuration, driver lifecycle, and raw I/O.
