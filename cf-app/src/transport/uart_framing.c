@@ -3,8 +3,8 @@
 #include <assert.h>
 #include <string.h>
 
-#include "cobs.h"
-#include "crc16.h"
+#include "lib/cobs.h"
+#include "lib/crc16.h"
 
 #define DEBUG_MODULE "UART_FRAMING"
 #include "debug.h"

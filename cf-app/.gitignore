@@ -1,10 +1,9 @@
-# build results
 build/
-target/
 *.o
-*.o.cmd
-*.o.d
 *.su
+.*.cmd
+.*.d
+built-in.o
 
 compile_commands.json
 .cache/

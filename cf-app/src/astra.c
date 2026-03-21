@@ -7,19 +7,18 @@
 #include "FreeRTOS.h" // IWYU pragma: keep
 
 #include "app.h"
-#include "astra_uart.h"
 #include "log.h"
 #include "param.h"
 #include "task.h"
 #include "uart2.h"
 
+#include "protocol/astra_uart.h"
+
 #define DEBUG_MODULE "ASTRA"
 #include "debug.h"
 
 #define ASTRA_UART2_BAUDRATE    115200 // Baudrate for UART2 communication with ESP32
-#define ASTRA_UART2_DEBOUNCE_MS 10   // Consider a packet complete if no new data is received on UART2 for this many ms
-#define ASTRA_CRTP_PORT         0x0E // CRTP port used for communication with ESP32
-#define ASTRA_BRIDGE_STACK_SIZE 1024 // Stack size (in words, ie x4 bytes on 32-bit targets)
+#define ASTRA_BRIDGE_STACK_SIZE 1024   // Stack size (in words, ie x4 bytes on 32-bit targets)
 
 // BLE address of the currently bound device (all zeros if unbound)
 // We use an uint64 instead of an array of 6 bytes because of the parameters framework
@@ -36,7 +35,10 @@ void astra_uart_bind_request_callback(void) {
   astra_dev_addr_t device_addr;
   memcpy(device_addr.bytes, &s_bound_device, ASTRA_BLE_ADDR_LEN);
 
-  if (astra_dev_addr_equal(&device_addr, &(astra_dev_addr_t){{0}}) == 0) {
+  const astra_dev_addr_t zero_addr = {{0}};
+  bool wants_unbind = (astra_dev_addr_cmp(&device_addr, &zero_addr) == 0);
+
+  if (wants_unbind) {
     astra_uart_packet_t unbind_request = {
         .type = ASTRA_UART_UNBIND_REQUEST,
     };
@@ -71,22 +73,20 @@ void astra_uart_bridge_task(void *params) {
 
     switch (packet.type) {
     case ASTRA_UART_BIND_RESPONSE:
-      if (packet.payload.bind_response.success) {
-        DEBUG_PRINT("Bind successful!\n");
-      } else {
+      if (!packet.payload.bind_response.success) {
         DEBUG_PRINT("Bind failed.\n");
-        s_bound_device = 0; // Clear the bound device on bind failure
+        s_bound_device = 0;
+        break;
       }
+
+      DEBUG_PRINT("Bind successful!\n");
       break;
 
     case ASTRA_UART_UNBIND_RESPONSE:
-      if (packet.payload.bind_response.success) {
-        DEBUG_PRINT("Unbind successful!\n");
-      } else {
-        DEBUG_PRINT("Unbind failed.\n");
-      }
-      s_bound_device = 0;       // Clear the bound device regardless of unbind success
-      s_bound_device_rssi = -1; // Clear the RSSI value since we're now unbound
+      DEBUG_PRINT("Unbind successful!\n");
+
+      s_bound_device = 0;
+      s_bound_device_rssi = -1;
       break;
 
     case ASTRA_UART_RSSI_VALUE:
@@ -111,7 +111,7 @@ void appMain(void) {
     DEBUG_PRINT("ERROR: Failed to initialize UART2\n");
     return;
   }
-  DEBUG_PRINT("UART2 initialized with baudrate %" PRId32 "\n", (uint32_t)ASTRA_UART2_BAUDRATE);
+  DEBUG_PRINT("UART2 initialized with baudrate %" PRIu32 "\n", (uint32_t)ASTRA_UART2_BAUDRATE);
 
   // Initialize the ASTRA UART protocol layer (creates queues and tasks)
   DEBUG_PRINT("Initializing ASTRA UART protocol layer ...\n");
@@ -133,6 +133,10 @@ void appMain(void) {
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
+
+// Static assertions to ensure our assumptions about struct sizes and BLE address length hold true.
+static_assert(sizeof(s_bound_device) == 8, "s_bound_device must be 8 bytes");
+static_assert(ASTRA_BLE_ADDR_LEN == 6, "BLE address must be 6 bytes");
 
 // ------------------------------------------------------------------------
 // Parameters
