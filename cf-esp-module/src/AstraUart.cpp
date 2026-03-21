@@ -33,6 +33,7 @@ extern "C" {
 BaseType_t AstraUart::send(const astra_uart_packet_t &packet) {
     uint8_t raw_buf[RAW_BUF_SIZE];
     uint8_t frame_buf[FRAME_BUF_SIZE];
+    uint8_t scratch[UART_FRAMING_SCRATCH_SIZE(RAW_BUF_SIZE)];
 
     size_t raw_len = 0;
     if (!astra_uart_serialize(&packet, raw_buf, sizeof(raw_buf), &raw_len)) {
@@ -40,7 +41,8 @@ BaseType_t AstraUart::send(const astra_uart_packet_t &packet) {
     }
 
     size_t frame_len =
-        uart_frame_encode(raw_buf, raw_len, frame_buf, sizeof(frame_buf));
+        uart_frame_encode(raw_buf, raw_len, scratch, sizeof(scratch), frame_buf,
+                          sizeof(frame_buf));
     if (frame_len == 0U) {
         return pdFALSE;
     }
@@ -64,6 +66,7 @@ BaseType_t AstraUart::receive(astra_uart_packet_t &out_packet,
                               TickType_t timeout) {
     uint8_t frame_buf[FRAME_BUF_SIZE];
     uint8_t raw_buf[RAW_BUF_SIZE];
+    uint8_t scratch[UART_FRAMING_SCRATCH_SIZE(RAW_BUF_SIZE)];
 
     int received =
         (int)read_until_delimiter(frame_buf, sizeof(frame_buf), timeout);
@@ -74,8 +77,8 @@ BaseType_t AstraUart::receive(astra_uart_packet_t &out_packet,
     size_t frame_len = (size_t)received;
 
     size_t raw_len = 0;
-    if (!uart_frame_decode(frame_buf, frame_len, raw_buf, sizeof(raw_buf),
-                           &raw_len)) {
+    if (!uart_frame_decode(frame_buf, frame_len, scratch, sizeof(scratch),
+                           raw_buf, sizeof(raw_buf), &raw_len)) {
         Serial.println("Failed to decode UART frame");
         print_raw_bytes(frame_buf, frame_len);
         return pdFALSE;
