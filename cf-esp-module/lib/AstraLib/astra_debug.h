@@ -6,10 +6,8 @@
  */
 
 // If we are on Crazyflie, try to include the next debug.h
-#if defined(CRAZYFLIE_FW) && defined(__has_include_next)
-#if __has_include_next("debug.h")
-#include_next "debug.h"
-#endif
+#if defined(CRAZYFLIE_FW) && __has_include("debug.h")
+#include "debug.h"
 #endif
 
 #ifndef DEBUG_FMT
