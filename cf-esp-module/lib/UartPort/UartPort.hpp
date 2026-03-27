@@ -3,7 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
+#include <string_view>
 
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
