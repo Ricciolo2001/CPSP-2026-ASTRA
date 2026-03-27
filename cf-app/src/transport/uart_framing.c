@@ -7,7 +7,7 @@
 #include "lib/crc16.h"
 
 #define DEBUG_MODULE "UART_FRAMING"
-#include "astra_debug.h"
+#include "astra_debug.h" // IWYU pragma: keep
 
 /**
  * Frame layout (before the 0x00 delimiter):
@@ -31,26 +31,30 @@
 #define CRC_BYTE_SHIFT 8U    /* shift MSB into/out of the high byte position */
 #define BYTE_MASK      0xFFU /* isolate the low byte of a wider integer       */
 
-size_t uart_frame_encode(const uint8_t *payload, size_t payload_len, uint8_t *out_buf, size_t out_max) {
-  if (payload == NULL || out_buf == NULL) {
+size_t uart_frame_encode(const uint8_t *payload, size_t payload_len, uint8_t *scratch, size_t scratch_size,
+                         uint8_t *out_buf, size_t out_max) {
+  if (payload == NULL || scratch == NULL || out_buf == NULL) {
     return 0;
+  }
+
+  if (scratch_size < payload_len + CRC_SIZE) {
+    return 0; /* scratch buffer too small */
   }
 
   if (payload_len + FRAME_OVERHEAD > out_max) {
     return 0; /* output buffer too small */
   }
 
-  /* --- Step 1: build temp buffer = payload || CRC16 --- */
-  uint8_t temp[payload_len + CRC_SIZE];
-  memcpy(temp, payload, payload_len);
+  /* --- Step 1: build scratch buffer = payload || CRC16 --- */
+  memcpy(scratch, payload, payload_len);
 
   uint32_t crc = crc16_compute(payload, payload_len);
-  temp[payload_len] = (uint8_t)(crc >> CRC_BYTE_SHIFT); /* MSB */
-  temp[payload_len + 1] = (uint8_t)(crc & BYTE_MASK);   /* LSB */
+  scratch[payload_len] = (uint8_t)(crc >> CRC_BYTE_SHIFT); /* MSB */
+  scratch[payload_len + 1] = (uint8_t)(crc & BYTE_MASK);   /* LSB */
 
   /* --- Step 2: COBS encode into out_buf --- */
   size_t encoded_len = 0;
-  cobs_status_t status = cobs_encode(temp, sizeof(temp), out_buf, out_max, &encoded_len);
+  cobs_status_t status = cobs_encode(scratch, payload_len + CRC_SIZE, out_buf, out_max, &encoded_len);
 
   if (status != COBS_RET_OK) {
     return 0;
@@ -62,10 +66,16 @@ size_t uart_frame_encode(const uint8_t *payload, size_t payload_len, uint8_t *ou
   return encoded_len + DELIMITER_SIZE;
 }
 
-bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payload, size_t out_max, size_t *out_len) {
+bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *scratch, size_t scratch_size,
+                       uint8_t *out_payload, size_t out_max, size_t *out_len) {
   assert(frame != NULL && "frame pointer is NULL");
+  assert(scratch != NULL && "scratch pointer is NULL");
   assert(out_payload != NULL && "out_payload pointer is NULL");
   assert(out_len != NULL && "out_len pointer is NULL");
+
+  if (scratch_size < out_max + CRC_SIZE) {
+    return false; /* scratch buffer too small */
+  }
 
   /* Need at least the COBS code byte + two CRC bytes + delimiter. */
   if (frame_len < (COBS_OVERHEAD + CRC_SIZE + DELIMITER_SIZE)) {
@@ -77,10 +87,9 @@ bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payl
   size_t cobs_input_len = frame_len - DELIMITER_SIZE;
 
   /* Decoded output holds the payload plus the two CRC bytes. */
-  uint8_t decoded[out_max + CRC_SIZE];
   size_t decoded_len = 0;
 
-  cobs_status_t status = cobs_decode(frame, cobs_input_len, decoded, sizeof(decoded), &decoded_len);
+  cobs_status_t status = cobs_decode(frame, cobs_input_len, scratch, scratch_size, &decoded_len);
   if (status != COBS_RET_OK) {
     DEBUG_PRINT("COBS decode failed: status=%d\n", (int)status);
     return false;
@@ -99,10 +108,10 @@ bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payl
   }
 
   uint16_t received_crc =
-      (uint16_t)(((uint16_t)decoded[payload_len] << CRC_BYTE_SHIFT) | (uint16_t)decoded[payload_len + 1]);
+      (uint16_t)(((uint16_t)scratch[payload_len] << CRC_BYTE_SHIFT) | (uint16_t)scratch[payload_len + 1]);
 
   /* --- Step 3: verify CRC over the raw payload bytes --- */
-  uint16_t calculated_crc = crc16_compute(decoded, payload_len);
+  uint16_t calculated_crc = crc16_compute(scratch, payload_len);
 
   if (received_crc != calculated_crc) {
     DEBUG_PRINT("CRC check failed: received 0x%04x, calculated 0x%04x\n", received_crc, calculated_crc);
@@ -110,7 +119,7 @@ bool uart_frame_decode(const uint8_t *frame, size_t frame_len, uint8_t *out_payl
   }
 
   /* --- Step 4: copy verified payload to caller's buffer --- */
-  memcpy(out_payload, decoded, payload_len);
+  memcpy(out_payload, scratch, payload_len);
   *out_len = payload_len;
 
   return true;

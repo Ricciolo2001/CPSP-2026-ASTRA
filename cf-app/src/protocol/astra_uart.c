@@ -61,6 +61,7 @@ static void uart_tx_task(void *params) {
 
   uint8_t raw_buf[RAW_BUF_SIZE];
   uint8_t frame_buf[FRAME_BUF_SIZE];
+  uint8_t scratch[UART_FRAMING_SCRATCH_SIZE(RAW_BUF_SIZE)];
 
   while (true) {
     astra_uart_packet_t packet;
@@ -74,7 +75,7 @@ static void uart_tx_task(void *params) {
       continue;
     }
 
-    size_t frame_len = uart_frame_encode(raw_buf, raw_len, frame_buf, sizeof(frame_buf));
+    size_t frame_len = uart_frame_encode(raw_buf, raw_len, scratch, sizeof(scratch), frame_buf, sizeof(frame_buf));
     if (frame_len == 0U) {
       DEBUG_PRINT("TX: frame encode failed\n");
       continue;
@@ -108,6 +109,7 @@ static void uart_rx_task(void *params) {
 
   uint8_t frame_buf[FRAME_BUF_SIZE];
   uint8_t raw_buf[RAW_BUF_SIZE];
+  uint8_t scratch[UART_FRAMING_SCRATCH_SIZE(RAW_BUF_SIZE)];
 
   while (true) {
     // Read until the 0x00 delimiter (delimiter is consumed but not stored in frame_buf)
@@ -124,7 +126,7 @@ static void uart_rx_task(void *params) {
     DEBUG_PRINT("RX: received %d bytes\n", received);
 
     size_t raw_len = 0;
-    if (!uart_frame_decode(frame_buf, frame_len, raw_buf, sizeof(raw_buf), &raw_len)) {
+    if (!uart_frame_decode(frame_buf, frame_len, scratch, sizeof(scratch), raw_buf, sizeof(raw_buf), &raw_len)) {
       DEBUG_PRINT("RX: frame decode / CRC check failed\n");
       continue;
     }

@@ -20,19 +20,19 @@ bool UartPort::init() {
 
     if (uart_driver_install(config_.port, config_.rxBufferSize,
                              config_.txBufferSize, 0, NULL, 0) != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to install UART driver");
+        ESP_LOGE(TAG, "Failed to install UART driver");
         return false;
     }
 
     if (uart_param_config(config_.port, &config_.uart) != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to configure UART parameters");
+        ESP_LOGE(TAG, "Failed to configure UART parameters");
         uart_driver_delete(config_.port);
         return false;
     }
 
     if (uart_set_pin(config_.port, config_.txdPin, config_.rxdPin,
                      config_.rtsPin, config_.ctsPin) != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to set UART pins");
+        ESP_LOGE(TAG, "Failed to set UART pins");
         uart_driver_delete(config_.port);
         return false;
     }

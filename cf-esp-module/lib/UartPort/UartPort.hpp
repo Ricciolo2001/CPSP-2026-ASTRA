@@ -1,10 +1,9 @@
 #ifndef UART_PORT_H
 #define UART_PORT_H
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <string>
+#include <string_view>
 
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
@@ -30,11 +29,6 @@ class UartPort {
     /// Read up to maxLen bytes into buf; blocks for at most timeout ticks.
     /// Returns the number of bytes read, or -1 on error.
     int read(uint8_t *buf, size_t maxLen, TickType_t timeout);
-    /// Overload of read() that takes a std::chrono::milliseconds timeout.
-    int read(uint8_t *buf, size_t maxLen, std::chrono::milliseconds timeout) {
-        auto ticks = pdMS_TO_TICKS(timeout.count());
-        return read(buf, maxLen, ticks);
-    }
     /// Overload of read() that blocks indefinitely until data is available.
     int read(uint8_t *buf, size_t maxLen) {
         return read(buf, maxLen, portMAX_DELAY);
