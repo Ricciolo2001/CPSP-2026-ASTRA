@@ -93,36 +93,9 @@ The project was completed cooperatively by all three team members, with everyone
 * Eissa Eyad
 * Giulia Pareschi
    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## Contributing
 
 This project is not open for external contributions as it is a course project. However, if you have any suggestions or feedback, feel free to reach out to the project maintainers via GitHub issues.
-
-
-
-
-
-
 
 ## License
 
