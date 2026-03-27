@@ -6,6 +6,8 @@ dependencies = [
   "cflib>=0.1.31",
   "matplotlib>=3.10.8",
   "numpy>=2.4.2",
+  "pytest>=9.0.2",
+  "scikit-image>=0.26.0",
 ]
 
 [project.scripts]

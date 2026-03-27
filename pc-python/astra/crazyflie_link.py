@@ -15,7 +15,6 @@ from .protocol import (
     CRTP_APP_PORT,
     CMD_DISTANCE,
     Telemetry,
-    cmd_bind,
 )
 
 # CRTP packets carry at most 30 bytes of payload
