@@ -1,12 +1,81 @@
 # ASTRA
 
-Autonomous Signal Tracking & Ranging Aircraft is a project that aims to develop an autonomous drone capable of tracking and estimating the position of a signal source.
+**ASTRA** (_Autonomous Signal Tracking & Ranging Aircraft_) is an autonomous drone system that locates the source of a Bluetooth Low Energy (BLE) beacon inside a room and navigates towards it.
 
-The drone will be based on the Crazyflie 2.1 platform and will use BLE (Bluetooth Low Energy) beacons for signal tracking.
+Built on the Crazyflie 2.1 platform, it combines onboard RSSI sampling performed by an ESP32 module mounted on the drone with a SLAM-based positioning system to iteratively estimate the beacon's position through trilateration.
 
-This project is done for the Cyber Physical Systems Programming (CPSP) course at the University of Bologna.
+Developed as a course project for Cyber Physical Systems Programming at the University of Bologna, ASTRA demonstrates how low-cost, off-the-shelf hardware can be combined to tackle indoor localization without relying on GPS or fixed infrastructure.
 
+## System Architecture
 
+The system consists of three main components:
+
+- The Crazyflie drone, which serves as the main platform for navigation and data collection.
+- An ESP32 module mounted on the drone, responsible for performing BLE scanning and sampling the RSSI values from the beacon's advertisements.
+- A PC application that receives data from the drone, visualizes the estimated position of the beacon, and allows the user to send commands to the drone.
+
+```mermaid
+graph TD
+    Beacon -->|BLE| ESP32[ESP32 Module]
+    ESP32 -->|UART| CF[Crazyflie Drone]
+    CF <-->|CRTP| PC[PC Application]
+```
+
+## Hardware Required
+
+The project requires the following hardware components:
+
+- Crazyflie 2.1 drone
+  - Ranger deck (for SLAM-based positioning)
+  - Flow deck (for stabilization of the internal state estimation)
+- ESP32-C3 microcontroller
+- BLE beacon (any standard BLE beacon that can advertise its presence)
+
+The choice of the ESP32-C3 was motivated by its low cost and compatibility with the Crazyflie ecosystem, as it is already included in the AI deck. This allows for easy replication of the project using existing and already available hardware components.
+
+## Localization and Navigation
+
+To understand where the beacon is located, we first need to understand where the drone is. For that, we use a SLAM-based positioning system that combines data from the Ranger deck and the Flow deck to estimate the drone's position inside a room.
+
+### Using SLAM for drone positioning
+
+The SLAM (Simultaneous Localization and Mapping) algorithm allows the drone to build a map of the environment while simultaneously estimating its own position within that map.
+The Ranger deck provides depth information about the surroundings, while the Flow deck helps with stabilization and accurate estimation of the drone's movement.
+By fusing the data from these two decks, we can obtain a reliable estimate of the drone's position and of a map of the environment.
+
+### Beacon localization
+
+To estimate the position of the beacon, we use trilateration, which is a method of determining the position of a point based on its distance from three or more known points. In our case, the known points are the positions of the drone at different locations inside the room. The beacon's distance from the drone is estimated using the RSSI values sampled by the ESP32 module.
+
+To account for the noise and interference in the RSSI measurements, we apply a Kalman filter to the sampled RSSI values.
+
+### Navigation towards the beacon
+
+The system (should) supports two navigation strategies:
+
+- Using the estimated position of the beacon to send a setpoint to the drone and navigate towards it using the built-in position controller of the Crazyflie.
+
+- Doing a gradient ascent on the RSSI values, which means that we continuously sample the RSSI values and move in the direction of the highest RSSI value until we reach the beacon.
+
+## Communication schema
+
+The communication between the components is structured as follows:
+
+### Beacon to ESP32
+
+BLE beacons advertise their presence by broadcasting advertisement messages at regular intervals. The ESP32 module mounted on the Crazyflie scans for these advertisements and samples the RSSI values, which are then used to estimate the distance to the beacon.
+
+When the ESP32 is not bound, it continuously scans for BLE advertisements, but does not store or send any data to the Crazyflie. Once it receives a BIND command with a specific BLE MAC address, it starts sampling the RSSI values for that beacon and sends the data back to the Crazyflie at regular intervals.
+
+### ESP32 to Crazyflie
+
+Between the ESP32 and the Crazyflie, we use a UART communication channel to exchange data. Since UART is a simple serial communication protocol, we have to ensure a proper data format and reliable transmission. For that we encode the data using COBS (Consistent Overhead Byte Stuffing) and we append a CRC16 checksum to ensure data integrity.
+
+### Crazyflie to PC
+
+The CF exposes the bound beacon's MAC address as a Crazyflie parameter, and the received RSSI as logging variables.
+
+The Crazyflie system then handles the communication with the PC using the Crazy Real-Time Protocol (CRTP) over a bidirectional communication channel established by the CrazyRadio USB dongle.
 
 ## Project Structure
 
@@ -17,29 +86,12 @@ The project is organized into the following directories:
 - `cf-esp-module`: Contains the code for the ESP32 module that will be used mounted on the Crazyflie to perform BLE scanning and signal processing.
 - `pc-python`: Contains the code for the PC application that will be used to visualize the data received from the drone and to send commands to it.
 
-## Hardware required
+## Prerequisites
 
-The hardware required for this project uses bot top and bottom deck space.  
-We used 2 different types of HW:
-* Ranger deck used to determine the exact position of the CF
-* Esp32 used to determine the distance from the beacon
-
-We decided to use an Esp32-c3 because it's a cheap micorcontroller. An esp32 is also included inside the AI deck, so our project could be replicated with an already existing deck, compatible with the CF ecosystem.
-
-
-## Comunication schema
-![Testo alternativo](res/schema_scambio_di_messaggi.drawio.png) 
-
-We use a bidirectional communication channel between the CF and a pc equipped with CrazyRadio.  
-We use a BLE beacon to advertise the position that we want to track and an ESP32 mounted on the drone is used to sample the RSSI of that beacon advertisement messages. 
-The ESP32 is wired via UART and it uses CRTP.
-
-## Trilateration the position
-We are gonna use a BLE beacon that advertise it's presence every 200ms.  
-We evaluate the distance using RSSI and a Kalman filter to reduce noise and interference and use an old SLAM project to estimate the CF position inside a room.    
-![Immagine grafico RSSI](  )  
-This gives us the distance from the point and the exact position of the CF.
-This data is sampled multiple times in different locations and after a certain number of measurements we are able to estimate the position of the beacon inside the room with certain accuracy.
+- A computer with Python 3.12 or later installed
+- Git for cloning the repository and its submodules
+- PlatformIO for building and flashing the ESP32 firmware
+- Crazyflie tools for flashing the Crazyflie firmware
 
 ## Getting Started
 
@@ -59,12 +111,15 @@ To get started with the project, follow these steps:
    cfloader flash build/cf2.bin stm32-fw
    ```
 
-3. Build and flash the code for the ESP32 module using platformIO contained in:
+3. Build and flash the code for the ESP32 module using PlatformIO:
+
    ```bash
-   cf-esp-module
+   cd cf-esp-module
+   platformio run --target upload
    ```
 
-4. Prepare the PC:
+4. Set up the Python environment for the PC application:
+
    ```bash
    cd pc-python
    python3 -m venv venv
@@ -72,27 +127,38 @@ To get started with the project, follow these steps:
    pip install -r requirements.txt
    ```
 
-5. Run one of the files contained in scripts
+5. Run one of the files contained in `pc-python/scripts`:
 
+   ```bash
+   python pc-python/scripts/slam.py
+   ```
 
 ## Constraints & Known Issues
-Developing on a small drone platform presents several physical and computational challenges.
-* Shadowing multipath and interference: The accuracy of RSSI-based ranging is heavily influenced by reflections of the signal and interference caused by high pitch electrical noise. On a small platform like the CF motor drivers are close to the antenna and may affect the quality of the sampled data due to interference in the analog to digital conversion. Having the antenna on a deck close to the body of the drone may also create a shadowing effect or cause more signal reflections.
-* Voltage Sag: off the shelf RSSI protocols usually don't take in consideration possible variaton in voltage. The ESP is directly connected to the battery via a bms integrated in the battery that limits the current. When we have hig power demand the voltage might sag lower than the 3.3v supplide to the ESP chip creating invalid measures and in extreme cases forcing the reboot of the device.
 
+Using a small drone platform like the Crazyflie comes with several constraints and challenges that we had to take into account during the development of the project.
 
+- **Shadowing multipath and interference**:
+  The accuracy of RSSI-based ranging is heavily influenced by reflections of the signal and interference caused by high-frequency electrical noise.
+  On a small platform like the CF motor drivers are close to the antenna and may affect the quality of the sampled data due to interference in the analog to digital conversion.
+  Having the antenna on a deck close to the body of the drone may also create a shadowing effect or cause more signal reflections.
 
-
+- **Voltage Sag**:
+  Off-the-shelf RSSI protocols usually don't take in consideration possible variation in voltage.
+  In our case, the ESP is directly connected to the battery via a BMS integrated in the battery that limits the current.
+  When we have high power demand the voltage might sag lower than the 3.3v supplied to the ESP chip, creating invalid measures and in extreme cases forcing the reboot of the device.
 
 ## Contributions
-The project was completed cooperatively by all three team members, with everyone participating in all aspects.
 
-### CrazyTeam:
+The project was completed cooperatively by all three team members, with everyone participating in all aspects:
 
-* Alessandro Ricci Armandi
-* Eissa Eyad
-* Giulia Pareschi
-   
+- Alessandro Ricci Armandi
+- Eyad Issa
+- Giulia Pareschi
+
+## Acknowledgements
+
+We would like to thank JustFanta01 and their team for their previous work on SLAM with the Crazyflie, which provided valuable insights and code that we were able to build upon for our project. You can find their work here: <https://github.com/JustFanta01/Crazyflie_slam>
+
 ## Contributing
 
 This project is not open for external contributions as it is a course project. However, if you have any suggestions or feedback, feel free to reach out to the project maintainers via GitHub issues.
