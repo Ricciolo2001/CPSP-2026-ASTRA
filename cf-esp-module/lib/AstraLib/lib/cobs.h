@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2026 Eyad Issa <eyadlorenzo@gmailcom>
+// SPDX-FileCopyrightText: 2026 Eyad Issa <eyadlorenzo@gmail.com>
 
 #pragma once
 

@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Eyad Issa <eyadlorenzo@gmail.com>
+// SPDX-FileCopyrightText: 2026 Alessandro Ricci Armandi
+
 #ifndef UART_PORT_H
 #define UART_PORT_H
 
