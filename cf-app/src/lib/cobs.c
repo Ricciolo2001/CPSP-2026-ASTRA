@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Eyad Issa <eyadlorenzo@gmail.com>
+
 #include "cobs.h"
 
 #include <stdbool.h>

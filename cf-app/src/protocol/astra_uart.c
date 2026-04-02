@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Eyad Issa <eyadlorenzo@gmail.com>
+
 #include "astra_uart.h"
 
 #include <assert.h>
