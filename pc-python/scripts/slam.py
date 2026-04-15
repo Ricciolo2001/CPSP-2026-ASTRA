@@ -347,8 +347,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--uri",
-        default="radio://0/83/2M/E7E7E7E7EA",
-        help="Crazyflie radio URI (default: radio://0/83/2M/E7E7E7E7EA)",
+        default="radio://0/40/2M/E7E7E7E7E6",
+        help="Crazyflie radio URI (default: radio://0/40/2M/E7E7E7E7E6)",
     )
     parser.add_argument(
         "--map-size",
