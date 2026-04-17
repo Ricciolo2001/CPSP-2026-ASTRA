@@ -1,47 +1,46 @@
 import numpy as np
-from scipy.optimize import least_squares
 
-def trilateration_objective(point, positions, distances):
-    """
-    Calcola la differenza tra la distanza euclidea calcolata
-    e quella misurata per ogni punto di riferimento.
-    """
+"""Inputs anchors {[x,y],[...]}"""
+
+def trilateration_robust(anchors, distances):
+    if len(anchors) < 3:
+        raise ValueError("Servono almeno 3 punti")
+
+    if len(anchors) != len(distances):
+        raise ValueError("Il numero di ancore e distanze deve coincidere")
+
+    if any(d < 0 for d in distances):
+        raise ValueError("Le distanze non possono essere negative")
+
+    x1, y1 = anchors[0]	
+    d1 = distances[0]
+
+    A = []
+    b = []
+
+    for i in range(1, len(anchors)):
+        xi, yi = anchors[i]
+        di = distances[i]
+
+        A.append([2 * (xi - x1), 2 * (yi - y1)])
+        b.append(d1**2 - di**2 - x1**2 + xi**2 - y1**2 + yi**2)
+
+    A = np.array(A, dtype=float)
+    b = np.array(b, dtype=float)
+
+    if np.linalg.matrix_rank(A) < 2:
+        raise ValueError("Configurazione geometrica non valida: punti allineati")
+
+    point, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+
+    residuals = []
     x, y = point
-    # Calcola le distanze dal punto attuale a tutti i punti di riferimento
-    computed_distances = np.sqrt((positions[:, 0] - x)**2 + (positions[:, 1] - y)**2)
-    # Restituisce il vettore dei residui (l'errore)
-    return computed_distances - distances
 
-def estimate_position(dataset):
-    """
-    Argomenti:
-        dataset: List di tuple o array numpy [[x1, y1, d1], [x2, y2, d2], ...]
-    Ritorna:
-        (x, y) stimati
-    """
-    data = np.array(dataset)
-    positions = data[:, :2]  # Coordinate x, y dei sensori
-    distances = data[:, 2]   # Distanze misurate d
+    for (xi, yi), di in zip(anchors, distances):
+        d_est = np.sqrt((x - xi)**2 + (y - yi)**2)
+        residuals.append(d_est - di)
 
-    # Punto di partenza per l'ottimizzazione (media delle posizioni dei sensori)
-    initial_guess = np.mean(positions, axis=0)
+    residuals = np.array(residuals)
+    total_error = np.linalg.norm(residuals)
 
-    # Minimizzazione dei minimi quadrati
-    result = least_squares(trilateration_objective, initial_guess, args=(positions, distances))
-
-    if result.success:
-        return result.x
-    else:
-        raise ValueError("L'ottimizzazione non è confluita: dati troppo rumorosi o insufficienti.")
-
-
-# Uses an array containg the X and Y values and a distance from the sensors measured at different positions
-misure = [
-    [0, 0, 5.1],
-    [10, 0, 5.0],
-    [5, 8, 3.2],
-    [2, 2, 2.8]
-]
-
-coordinate_stimate = estimate_position(misure)
-print(f"Posizione stimata dell'oggetto: x={coordinate_stimate[0]:.3f}, y={coordinate_stimate[1]:.3f}")
+    return point, residuals, total_error

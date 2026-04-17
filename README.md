@@ -147,6 +147,24 @@ Using a small drone platform like the Crazyflie comes with several constraints a
   In our case, the ESP is directly connected to the battery via a BMS integrated in the battery that limits the current.
   When we have high power demand the voltage might sag lower than the 3.3v supplied to the ESP chip, creating invalid measures and in extreme cases forcing the reboot of the device.
 
+## Challenges
+### State estimator problems
+When we started testing software components that required the use of the StateEstimator we encountered several issues.  
+Logged values where unstabl and the posistions estimate was unstable resulting in a drift in the measurements.  
+We tried to fix the Kalman algorithm by first forcing a reset using the command  
+```scf.cf.param.set_value('kalman.resetEstimation', '1')```  
+and them we tried to fix the drifting valyues by desensibilizing the ```scf.cf.param.set_value('kalman.mNGyro_rollpitch', '0.01')```  
+but both changes failed.  
+
+Aftes a deep analysys of the board we concluded that probably there were some elecrrical problems due to the presence of oxydation on the board; and also it was dirty.  
+After disassembling and cleaning the CF PCB using 99% isopropanol and an ultrasonic vat the values became stable without drifting and the problem was solved
+
+### BLE and crazy radio incompatible
+In the first version of the project we wanted to use the BEL capabilities of the CF to scan for BLE beacons, but BLE and crazyradio are mutually excluesive so this was not possible so we started using an esp32 connected via UART.
+
+
+
+
 ## Contributions
 
 The project was completed cooperatively by all three team members, with everyone participating in all aspects:
@@ -159,9 +177,6 @@ The project was completed cooperatively by all three team members, with everyone
 
 We would like to thank JustFanta01 and their team for their previous work on SLAM with the Crazyflie, which provided valuable insights and code that we were able to build upon for our project. You can find their work here: <https://github.com/JustFanta01/Crazyflie_slam>
 
-## Contributing
-
-This project is not open for external contributions as it is a course project. However, if you have any suggestions or feedback, feel free to reach out to the project maintainers via GitHub issues.
 
 ## License
 
