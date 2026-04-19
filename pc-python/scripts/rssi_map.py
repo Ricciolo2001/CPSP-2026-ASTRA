@@ -35,7 +35,7 @@ from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from astra.rssi import MedianEmaFilter
 from astra.localization import estimate_beacon_position, BeaconEstimate
 from astra.io import write_csv_rows
-from astra.crazyflie import FirmwareLogAssembler
+from astra.crazyflie import LineBuffer, get_bound_mac, set_bound_mac
 
 try:
     from scipy.interpolate import griddata as _scipy_griddata
@@ -109,12 +109,21 @@ class RssiMapVisualizer:
 
         # Scatter: drone positions coloured by filtered RSSI
         self.scatter = self.ax_map.scatter(
-            [], [], c=[], cmap="RdYlGn",
-            s=15, zorder=3, vmin=_RSSI_VMIN, vmax=_RSSI_VMAX,
+            [],
+            [],
+            c=[],
+            cmap="RdYlGn",
+            s=15,
+            zorder=3,
+            vmin=_RSSI_VMIN,
+            vmax=_RSSI_VMAX,
         )
         self.fig.colorbar(
-            self.scatter, ax=self.ax_map,
-            fraction=0.03, pad=0.02, label="RSSI filtered (dBm)",
+            self.scatter,
+            ax=self.ax_map,
+            fraction=0.03,
+            pad=0.02,
+            label="RSSI filtered (dBm)",
         )
 
         # Trajectory and current position
@@ -122,16 +131,29 @@ class RssiMapVisualizer:
         (self.pose_dot,) = self.ax_map.plot([], [], "bo", ms=7, zorder=4, label="Drone")
 
         # Guide overlay: triangle waypoints + live manual position marker
-        (self.guide_line,) = self.ax_map.plot([], [], "m--", lw=1.2, zorder=6, label="Triangle")
+        (self.guide_line,) = self.ax_map.plot(
+            [], [], "m--", lw=1.2, zorder=6, label="Triangle"
+        )
         (self.guide_pts,) = self.ax_map.plot([], [], "ms", ms=6, zorder=7)
-        (self.guide_current,) = self.ax_map.plot([], [], "ko", ms=8, zorder=8, label="CF now")
-        (self.guide_target,) = self.ax_map.plot([], [], "m*", ms=14, zorder=9, label="Target")
-        (self.objective_dot,) = self.ax_map.plot([], [], "gd", ms=10, zorder=10, label="Objective")
+        (self.guide_current,) = self.ax_map.plot(
+            [], [], "ko", ms=8, zorder=8, label="CF now"
+        )
+        (self.guide_target,) = self.ax_map.plot(
+            [], [], "m*", ms=14, zorder=9, label="Target"
+        )
+        (self.objective_dot,) = self.ax_map.plot(
+            [], [], "gd", ms=10, zorder=10, label="Objective"
+        )
         self.objective_xy: Optional[tuple[float, float]] = None
 
         # Beacon estimate marker (hidden until first estimate)
         (self.beacon_star,) = self.ax_map.plot(
-            [], [], "y*", ms=20, zorder=5, label="Beacon est.",
+            [],
+            [],
+            "y*",
+            ms=20,
+            zorder=5,
+            label="Beacon est.",
         )
         self.ax_map.legend(loc="upper right", fontsize=9)
 
@@ -152,7 +174,12 @@ class RssiMapVisualizer:
         self.ax_info = self.fig.add_subplot(gs[1, 1])
         self.ax_info.axis("off")
         self.txt = self.ax_info.text(
-            0, 1, "Waiting for data…", va="top", family="monospace", fontsize=9,
+            0,
+            1,
+            "Waiting for data…",
+            va="top",
+            family="monospace",
+            fontsize=9,
         )
         self.prompt_txt = self.ax_info.text(
             0,
@@ -212,7 +239,10 @@ class RssiMapVisualizer:
                         method="linear",
                     )
                     extent: tuple[float, float, float, float] = (
-                        float(gx[0]), float(gx[-1]), float(gy[0]), float(gy[-1])
+                        float(gx[0]),
+                        float(gx[-1]),
+                        float(gy[0]),
+                        float(gy[-1]),
                     )
                     if self._heatmap_img is None:
                         self._heatmap_img = self.ax_map.imshow(
@@ -289,8 +319,7 @@ class RssiMapVisualizer:
     def wait_for_feedback(self, prompt: str) -> None:
         """Show a prompt in the GUI and wait for any key press as feedback."""
         self.prompt_txt.set_text(
-            f"GUIDE: {prompt}\n"
-            "Press any key in this window when done."
+            f"GUIDE: {prompt}\nPress any key in this window when done."
         )
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
@@ -354,71 +383,16 @@ class RssiMapVisualizer:
         self.objective_xy = (x, y)
         self.objective_dot.set_data([x], [y])
         self.prompt_txt.set_text(
-            f"OBJECTIVE: {message}\n"
-            f"Objective at ({x:.3f}, {y:.3f}) m"
+            f"OBJECTIVE: {message}\nObjective at ({x:.3f}, {y:.3f}) m"
         )
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 
 
 # ---------------------------------------------------------------------------
-# BLE MAC helpers
-# ---------------------------------------------------------------------------
-# The firmware stores the 6-byte MAC address inside a uint64 split across:
-#   astra.bound_device_low  (uint32) → MAC bytes [0..3]
-#   astra.bound_device_hig  (uint16) → MAC bytes [4..5]
-# For user-facing CLI I/O we use canonical MAC order (AA:BB:CC:DD:EE:FF),
-# but firmware expects the opposite byte order, so we invert on write/read.
-# Writing bound_device_hig triggers the bind/unbind callback in the firmware.
-
-def get_bound_mac(scf) -> str:
-    """Read the currently bound BLE MAC from the Crazyflie params.
-
-    Returns a colon-separated uppercase string, e.g. ``'AA:BB:CC:DD:EE:FF'``.
-    All-zeros means unbound.
-    """
-    low = int(scf.cf.param.get_value("astra.bound_device_low"))
-    high = int(scf.cf.param.get_value("astra.bound_device_hig"))
-    mac_bytes = [
-        (low >> 0) & 0xFF,
-        (low >> 8) & 0xFF,
-        (low >> 16) & 0xFF,
-        (low >> 24) & 0xFF,
-        (high >> 0) & 0xFF,
-        (high >> 8) & 0xFF,
-    ]
-    mac_bytes.reverse()
-    return ":".join(f"{b:02X}" for b in mac_bytes)
-
-
-def set_bound_mac(scf, mac_str: str) -> None:
-    """Write a BLE MAC address to the Crazyflie via the param system.
-
-    Accepts ``'AA:BB:CC:DD:EE:FF'`` or ``'AA-BB-CC-DD-EE-FF'`` format.
-    Pass ``'00:00:00:00:00:00'`` to unbind.
-    Writing bound_device_low first (no side-effects), then bound_device_hig
-    which triggers the firmware bind/unbind callback.
-    """
-    parts = mac_str.replace("-", ":").split(":")
-    if len(parts) != 6:
-        raise ValueError(f"Invalid MAC address: {mac_str!r}")
-    mac_bytes = [int(b, 16) for b in parts]
-    mac_bytes.reverse()
-    low = (
-        (mac_bytes[0] << 0)
-        | (mac_bytes[1] << 8)
-        | (mac_bytes[2] << 16)
-        | (mac_bytes[3] << 24)
-    )
-    high = (mac_bytes[4] << 0) | (mac_bytes[5] << 8)
-    # Write low first (no callback), then high (triggers bind/unbind on firmware)
-    scf.cf.param.set_value("astra.bound_device_low", str(low))
-    scf.cf.param.set_value("astra.bound_device_hig", str(high))
-
-
-# ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
+
 
 def run_rssi_map(scf, args, data_queue: "queue.Queue[DroneData]") -> None:
     # Reset Kalman and let it settle briefly
@@ -597,7 +571,7 @@ if __name__ == "__main__":
         default=None,
         metavar="AA:BB:CC:DD:EE:FF",
         help="BLE MAC address to bind before starting (use 00:00:00:00:00:00 to unbind). "
-             "If omitted, the current bound device is used.",
+        "If omitted, the current bound device is used.",
     )
     parser.add_argument(
         "--triangle-side",
@@ -623,16 +597,16 @@ if __name__ == "__main__":
 
     # 2 + 2 + 2 + 4 = 10 bytes — well within the 26-byte LogConfig limit
     logconf = LogConfig(name="RssiMap", period_in_ms=50)
-    logconf.add_variable("stateEstimate.x", "FP16")            # 2 bytes
-    logconf.add_variable("stateEstimate.y", "FP16")            # 2 bytes
-    logconf.add_variable("stabilizer.yaw", "FP16")             # 2 bytes
-    logconf.add_variable("astra.bound_device_rssi", "int32_t") # 4 bytes
+    logconf.add_variable("stateEstimate.x", "FP16")  # 2 bytes
+    logconf.add_variable("stateEstimate.y", "FP16")  # 2 bytes
+    logconf.add_variable("stabilizer.yaw", "FP16")  # 2 bytes
+    logconf.add_variable("astra.bound_device_rssi", "int32_t")  # 4 bytes
 
     with SyncCrazyflie(args.uri, cf=Crazyflie(rw_cache="./cache")) as scf:
         print(f"Connected to {args.uri}")
 
         # Print firmware DEBUG_PRINT messages directly to console
-        fw_log = FirmwareLogAssembler(lambda line: print(f"[CF] {line}", flush=True))
+        fw_log = LineBuffer(lambda line: print(f"[CF] {line}", flush=True))
         scf.cf.console.receivedChar.add_callback(fw_log.feed)
 
         scf.cf.param.set_value("stabilizer.estimator", "1")
