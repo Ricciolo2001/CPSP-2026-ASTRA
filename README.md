@@ -31,7 +31,7 @@ The project requires the following hardware components:
 - ESP32-C3 microcontroller
 - BLE beacon (any standard BLE beacon that can advertise its presence)
 
-The choice of the ESP32-C3 was motivated by its low cost and compatibility with the Crazyflie ecosystem, as it is already included in the AI deck. This allows for easy replication of the project using existing and already available hardware components.
+The choice of the ESP32-C3 was motivated by its low cost and compatibility with the Crazyflie ecosystem, as it is already included in the AI deck.
 
 ## Localization and Navigation
 
@@ -76,6 +76,11 @@ Between the ESP32 and the Crazyflie, we use a UART communication channel to exch
 The CF exposes the bound beacon's MAC address as a Crazyflie parameter, and the received RSSI as logging variables.
 
 The Crazyflie system then handles the communication with the PC using the Crazy Real-Time Protocol (CRTP) over a bidirectional communication channel established by the CrazyRadio USB dongle.
+
+### Number of additional components
+
+The Crazyflie 2.1 has built-in support for expansion decks, like the Ranger and Flow decks.
+To do that, it re-uses the provided 
 
 ## Project Structure
 
@@ -147,23 +152,39 @@ Using a small drone platform like the Crazyflie comes with several constraints a
   In our case, the ESP is directly connected to the battery via a BMS integrated in the battery that limits the current.
   When we have high power demand the voltage might sag lower than the 3.3v supplied to the ESP chip, creating invalid measures and in extreme cases forcing the reboot of the device.
 
-## Challenges
+## Challenges and Future Improvements
+
+### Crazyflie BLE
+
+The Crazyflie 2.1 has built-in BLE capabilities, but they are not compatible with the CrazyRadio protocol. From the [Crazyflie documentation](https://www.bitcraze.io/documentation/repository/crazyflie2-nrf-firmware/master/protocols/ble/):
+
+> If the NRF receives any other type of package that is not BLE communication, like crazyradio, OW rewrite or even radio address scanning, the BLE will be disabled. The Crazyflie will need to be restarted in order for the Bluetooth to be enabled again
+
+This means that we cannot use the built-in BLE capabilities of the Crazyflie while using the CrazyRadio for communication with the PC.
+
+Theoretically, the NRF firmware could be modified to expose more "Services" via BLE, but using the same radio for both scanning other BLE devices and communicating with the PC is not something we think is possible.
+
 ### State estimator problems
-When we started testing software components that required the use of the StateEstimator we encountered several issues.  
-Logged values where unstabl and the posistions estimate was unstable resulting in a drift in the measurements.  
-We tried to fix the Kalman algorithm by first forcing a reset using the command  
-```scf.cf.param.set_value('kalman.resetEstimation', '1')```  
-and them we tried to fix the drifting valyues by desensibilizing the ```scf.cf.param.set_value('kalman.mNGyro_rollpitch', '0.01')```  
-but both changes failed.  
 
-Aftes a deep analysys of the board we concluded that probably there were some elecrrical problems due to the presence of oxydation on the board; and also it was dirty.  
-After disassembling and cleaning the CF PCB using 99% isopropanol and an ultrasonic vat the values became stable without drifting and the problem was solved
+The **state estimator** is a crucial component of the Crazyflie that fuses data from various sensors to estimate the drone's position and orientation. Depending on its configuration, it can use both internal sensors (like the IMU) and external sensors (like the Flow deck).
 
-### BLE and crazy radio incompatible
-In the first version of the project we wanted to use the BEL capabilities of the CF to scan for BLE beacons, but BLE and crazyradio are mutually excluesive so this was not possible so we started using an esp32 connected via UART.
+When we began testing software components that depended on the State Estimator, we encountered several issues. Logged values were unstable, and the position estimate exhibited significant drift over time.
 
+To address this, we first attempted a software fix by forcing a Kalman filter reset:
 
+```python
+scf.cf.param.set_value('kalman.resetEstimation', '1')
+```
 
+We then tried to reduce the drift by desensitizing the gyroscope roll/pitch noise parameter:
+
+```python
+scf.cf.param.set_value('kalman.mNGyro_rollpitch', '0.01')
+```
+
+Neither approach resolved the issue. After a thorough inspection of the board, we concluded that the root cause was likely electrical in nature, specifically, oxidation buildup and general contamination on the PCB.
+
+We disassembled the Crazyflie and cleaned the PCB using 99% isopropanol in an ultrasonic bath. Following this, the sensor readings became stable with no observable drift, and the problem was fully resolved.
 
 ## Contributions
 
@@ -175,8 +196,9 @@ The project was completed cooperatively by all three team members, with everyone
 
 ## Acknowledgements
 
-We would like to thank JustFanta01 and their team for their previous work on SLAM with the Crazyflie, which provided valuable insights and code that we were able to build upon for our project. You can find their work here: <https://github.com/JustFanta01/Crazyflie_slam>
+We would like to thank JustFanta01 and their team for their previous work on SLAM with the Crazyflie, which provided valuable insights and code that we were able to build upon for our project.
 
+You can find their work here: <https://github.com/JustFanta01/Crazyflie_slam>
 
 ## License
 
