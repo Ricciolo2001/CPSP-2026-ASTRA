@@ -35,7 +35,7 @@ from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 from astra.rssi import MedianEmaFilter
 from astra.localization import estimate_beacon_position, BeaconEstimate
 from astra.io import write_csv_rows
-from astra.crazyflie_link import FirmwareLogAssembler
+from astra.crazyflie import FirmwareLogAssembler
 
 try:
     from scipy.interpolate import griddata as _scipy_griddata

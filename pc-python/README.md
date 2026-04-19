@@ -53,7 +53,7 @@ astra/
   __init__.py
   __main__.py          # Interactive CRTP console (SCAN / BIND / DISTANCE / free text)
   protocol.py          # Command constants, response parsers, Telemetry dataclass
-  crazyflie_link.py    # send_line, LineAssembler, FirmwareLogAssembler, AstraLink
+  crazyflie.py         # send_line, LineAssembler, FirmwareLogAssembler, AstraLink
   rssi.py              # MedianEmaFilter, rssi_to_distance
   localization.py      # estimate_beacon_position (grid search + Gauss-Newton)
   io.py                # CSV read/write helpers

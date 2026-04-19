@@ -1,3 +1,5 @@
+# Functions related to the Crazyflie
+
 from __future__ import annotations
 
 import json
@@ -26,12 +28,11 @@ CRTP_MAX_PAYLOAD = 30
 # ---------------------------------------------------------------------------
 
 
-def send_line(cf: Crazyflie, port: int, line: str) -> None:
+def send(cf: Crazyflie, port: int, data: bytes) -> None:
     """
-    Encode *line* as UTF-8, append a newline terminator, then send it as
-    one or more CRTP packets of at most CRTP_MAX_PAYLOAD bytes each.
+    Send *data* as one or more CRTP packets of at most CRTP_MAX_PAYLOAD
+    bytes each.
     """
-    data = (line + "\n").encode("utf-8")
     for offset in range(0, len(data), CRTP_MAX_PAYLOAD):
         chunk = data[offset : offset + CRTP_MAX_PAYLOAD]
         pk = CRTPPacket()
@@ -39,6 +40,15 @@ def send_line(cf: Crazyflie, port: int, line: str) -> None:
         pk.channel = 0
         pk.data = chunk
         cf.send_packet(pk)
+
+
+def send_line(cf: Crazyflie, port: int, line: str) -> None:
+    """
+    Encode *line* as UTF-8, append a newline terminator, then send it as
+    one or more CRTP packets of at most CRTP_MAX_PAYLOAD bytes each.
+    """
+    data = (line + "\n").encode("utf-8")
+    send(cf, port, data)
 
 
 class LineAssembler:
