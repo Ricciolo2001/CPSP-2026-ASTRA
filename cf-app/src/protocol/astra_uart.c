@@ -6,15 +6,22 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "astra_codec.h"
+#include "astra_config.h"
 #include "transport/uart_framing.h"
 
 #include "FreeRTOS.h" // IWYU pragma: keep
 #include "portmacro.h"
 #include "queue.h"
 #include "task.h"
-#include "uart2.h"
+
+#ifdef ASTRA_UART_USE_UART1
+  #include "uart1.h"
+#else
+  #include "uart2.h"
+#endif
 
 #define DEBUG_MODULE "ASTRA_UART"
 #include "debug.h"
@@ -56,6 +63,30 @@ static TaskHandle_t s_rx_task_handle;
 static bool s_initialized = false;
 
 /* -------------------------------------------------------------------------
+ * Internal functions
+ * ---------------------------------------------------------------------- */
+
+/**
+ * @brief Get one byte from the UART with an infinite timeout.
+ * @return true if a byte was successfully read and stored in @p out_byte, false on error.
+ */
+static bool uart_read_byte(uint8_t *out_byte) {
+#ifdef ASTRA_UART_USE_UART1
+  return uart1GetDataWithTimeout(out_byte, portMAX_DELAY);
+#else
+  return uart2GetData(1, out_byte) > 0;
+#endif
+}
+
+static void uart_send_data(uint8_t *data, uint32_t len) {
+#ifdef ASTRA_UART_USE_UART1
+  uart1SendData(len, data);
+#else
+  uart2SendData(len, data);
+#endif
+}
+
+/* -------------------------------------------------------------------------
  * Internal tasks
  * ---------------------------------------------------------------------- */
 
@@ -84,7 +115,7 @@ static void uart_tx_task(void *params) {
       continue;
     }
 
-    uart2SendData((uint32_t)frame_len, frame_buf);
+    uart_send_data(frame_buf, frame_len);
   }
 }
 
@@ -95,8 +126,8 @@ static ssize_t read_until_char(uint8_t delimiter, uint8_t *out_buf, size_t max_l
   size_t idx = 0;
   while (idx < max_len) {
     uint8_t byte;
-    int result = uart2GetData(1, &byte);
-    if (result <= 0) {
+    bool read = uart_read_byte(&byte);
+    if (!read) {
       return -1; /* error or no data */
     }
     if (byte == delimiter) {
@@ -116,7 +147,7 @@ static void uart_rx_task(void *params) {
 
   while (true) {
     // Read until the 0x00 delimiter (delimiter is consumed but not stored in frame_buf)
-    int received = read_until_char(0x00, frame_buf, sizeof(frame_buf));
+    ssize_t received = read_until_char(0x00, frame_buf, sizeof(frame_buf));
     if (received <= 0) {
       DEBUG_PRINT("RX: uart2GetData failed or returned no data\n");
       continue;
@@ -126,7 +157,7 @@ static void uart_rx_task(void *params) {
      * Add 1 to restore the expected length. */
     size_t frame_len = (size_t)received + 1U;
 
-    DEBUG_PRINT("RX: received %d bytes\n", received);
+    DEBUG_PRINT("RX: received %zd bytes\n", received);
 
     size_t raw_len = 0;
     if (!uart_frame_decode(frame_buf, frame_len, scratch, sizeof(scratch), raw_buf, sizeof(raw_buf), &raw_len)) {
