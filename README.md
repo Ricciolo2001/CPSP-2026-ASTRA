@@ -80,7 +80,7 @@ The Crazyflie system then handles the communication with the PC using the Crazy 
 ### Number of additional components
 
 The Crazyflie 2.1 has built-in support for expansion decks, like the Ranger and Flow decks.
-To do that, it re-uses the provided 
+To do that, it re-uses the provided
 
 ## Project Structure
 
@@ -97,6 +97,28 @@ The project is organized into the following directories:
 - Git for cloning the repository and its submodules
 - PlatformIO for building and flashing the ESP32 firmware
 - Crazyflie tools for flashing the Crazyflie firmware
+
+## Hardware Setup
+
+### Pin Connections for the ESP32 module
+
+<-- TODO: da dove prendiamo la corrente? -->
+
+#### Using UART 2 (Right side of the board)
+
+| ESP32 Pin       | Crazyflie Pin     | Description              |
+| --------------- | ----------------- | ------------------------ |
+| GND             | LEFT PIN 10 (GND) | Ground connection        |
+| GPIO_NUM_5 (TX) | RIGHT PIN 2 (RX)  | ESP32 TX -> Crazyflie RX |
+| GPIO_NUM_6 (RX) | RIGHT PIN 1 (TX)  | Crazyflie TX -> ESP32 RX |
+
+#### Using UART 1 (Left side of the board)
+
+| ESP32 Pin       | Crazyflie Pin     | Description              |
+| --------------- | ----------------- | ------------------------ |
+| GND             | LEFT PIN 10 (GND) | Ground connection        |
+| GPIO_NUM_5 (TX) | LEFT PIN 2 (RX)   | ESP32 TX -> Crazyflie RX |
+| GPIO_NUM_6 (RX) | LEFT PIN 3 (TX)   | Crazyflie TX -> ESP32 RX |
 
 ## Getting Started
 
