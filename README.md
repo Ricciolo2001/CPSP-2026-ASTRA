@@ -102,7 +102,9 @@ The project is organized into the following directories:
 
 ### Pin Connections for the ESP32 module
 
-<-- TODO: da dove prendiamo la corrente? -->
+> [!WARNING]
+>
+> We have to use UART1 because UART2 is used by the Flow deck.
 
 #### Using UART 2 (Right side of the board)
 
