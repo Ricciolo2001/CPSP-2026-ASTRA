@@ -111,11 +111,12 @@ The project is organized into the following directories:
 
 #### Using UART 1 (Left side of the board)
 
-| ESP32 Pin       | Crazyflie Pin     | Description              |
-| --------------- | ----------------- | ------------------------ |
-| GND             | LEFT PIN 10 (GND) | Ground connection        |
-| GPIO_NUM_5 (TX) | LEFT PIN 2 (RX)   | ESP32 TX -> Crazyflie RX |
-| GPIO_NUM_6 (RX) | LEFT PIN 3 (TX)   | Crazyflie TX -> ESP32 RX |
+| ESP32 Pin       | Crazyflie Pin      | Description                |
+| --------------- | ------------------ | -------------------------- |
+| 3.3V            | RIGHT PIN 9 (VCOM) | Power supply for the ESP32 |
+| GND             | LEFT PIN 10 (GND)  | Ground connection          |
+| GPIO_NUM_5 (TX) | LEFT PIN 2 (RX)    | ESP32 TX -> Crazyflie RX   |
+| GPIO_NUM_6 (RX) | LEFT PIN 3 (TX)    | Crazyflie TX -> ESP32 RX   |
 
 ## Getting Started
 
