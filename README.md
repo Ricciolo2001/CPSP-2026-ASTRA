@@ -2,9 +2,9 @@
 
 **ASTRA** (_Autonomous Signal Tracking & Ranging Aircraft_) is an autonomous drone system that locates the source of a Bluetooth Low Energy (BLE) beacon inside a room and navigates towards it.
 
-Built on the Crazyflie 2.1 platform, it combines onboard RSSI sampling performed by an ESP32 module mounted on the drone with a SLAM-based positioning system to iteratively estimate the beacon's position through trilateration.
+Built on the Crazyflie 2.1 platform, it combines onboard RSSI sampling performed by an ESP32 module mounted on the drone with the Flow deck motion tracking to estimate and navigate towards the beacon.
 
-Developed as a course project for Cyber Physical Systems Programming at the University of Bologna, ASTRA demonstrates how low-cost, off-the-shelf hardware can be combined to tackle indoor localization without relying on GPS or fixed infrastructure.
+The project was developed as a course project for the Cyber Physical Systems Programming course at the University of Bologna.
 
 ## System Architecture
 
@@ -26,7 +26,6 @@ graph TD
 The project requires the following hardware components:
 
 - Crazyflie 2.1 drone
-  - Ranger deck (for SLAM-based positioning)
   - Flow deck (for stabilization of the internal state estimation)
 - ESP32-C3 microcontroller
 - BLE beacon (any standard BLE beacon that can advertise its presence)
@@ -35,27 +34,11 @@ The choice of the ESP32-C3 was motivated by its low cost and compatibility with 
 
 ## Localization and Navigation
 
-To understand where the beacon is located, we first need to understand where the drone is. For that, we use a SLAM-based positioning system that combines data from the Ranger deck and the Flow deck to estimate the drone's position inside a room.
+To locate the beacon, we only rely on the RSSI values sampled by the ESP32 module. The beacon continuously advertises its presence, and the ESP32 samples the RSSI values of these advertisements to estimate the distance to the beacon.
 
-### Using SLAM for drone positioning
+The drone moves and iteratively estimates the position of the beacon using trilateration, which is a method of determining the position of a point based on its distance from three or more known points.
 
-The SLAM (Simultaneous Localization and Mapping) algorithm allows the drone to build a map of the environment while simultaneously estimating its own position within that map.
-The Ranger deck provides depth information about the surroundings, while the Flow deck helps with stabilization and accurate estimation of the drone's movement.
-By fusing the data from these two decks, we can obtain a reliable estimate of the drone's position and of a map of the environment.
-
-### Beacon localization
-
-To estimate the position of the beacon, we use trilateration, which is a method of determining the position of a point based on its distance from three or more known points. In our case, the known points are the positions of the drone at different locations inside the room. The beacon's distance from the drone is estimated using the RSSI values sampled by the ESP32 module.
-
-To account for the noise and interference in the RSSI measurements, we apply a Kalman filter to the sampled RSSI values.
-
-### Navigation towards the beacon
-
-The system (should) supports two navigation strategies:
-
-- Using the estimated position of the beacon to send a setpoint to the drone and navigate towards it using the built-in position controller of the Crazyflie.
-
-- Doing a gradient ascent on the RSSI values, which means that we continuously sample the RSSI values and move in the direction of the highest RSSI value until we reach the beacon.
+To account for the noise and interference in the RSSI measurements, we apply a strong Kalman filter to the sampled RSSI values during the capture phase. For this reason, we let the drone land before starting the capture.
 
 ## Communication schema
 
@@ -63,24 +46,23 @@ The communication between the components is structured as follows:
 
 ### Beacon to ESP32
 
-BLE beacons advertise their presence by broadcasting advertisement messages at regular intervals. The ESP32 module mounted on the Crazyflie scans for these advertisements and samples the RSSI values, which are then used to estimate the distance to the beacon.
+BLE beacons advertise their presence by broadcasting advertisement messages at regular intervals.
+The ESP32 module mounted on the Crazyflie scans for these advertisements and samples the RSSI values, which are then used to estimate the distance to the beacon.
 
-When the ESP32 is not bound, it continuously scans for BLE advertisements, but does not store or send any data to the Crazyflie. Once it receives a BIND command with a specific BLE MAC address, it starts sampling the RSSI values for that beacon and sends the data back to the Crazyflie at regular intervals.
+When the ESP32 is not bound, it continuously scans for BLE advertisements, but does not store or send any data to the Crazyflie.
+Once it receives a BIND command with a specific BLE MAC address, it starts sampling the RSSI values for that beacon and sends the data back to the Crazyflie at regular intervals.
 
 ### ESP32 to Crazyflie
 
-Between the ESP32 and the Crazyflie, we use a UART communication channel to exchange data. Since UART is a simple serial communication protocol, we have to ensure a proper data format and reliable transmission. For that we encode the data using COBS (Consistent Overhead Byte Stuffing) and we append a CRC16 checksum to ensure data integrity.
+Between the ESP32 and the Crazyflie, we use a UART communication channel to exchange data.
+
+Since UART is a simple serial communication protocol, we have to ensure a proper data format and reliable transmission. For that we encode the data using COBS (Consistent Overhead Byte Stuffing) and we append a CRC16 checksum to ensure data integrity.
 
 ### Crazyflie to PC
 
 The CF exposes the bound beacon's MAC address as a Crazyflie parameter, and the received RSSI as logging variables.
 
 The Crazyflie system then handles the communication with the PC using the Crazy Real-Time Protocol (CRTP) over a bidirectional communication channel established by the CrazyRadio USB dongle.
-
-### Number of additional components
-
-The Crazyflie 2.1 has built-in support for expansion decks, like the Ranger and Flow decks.
-To do that, it re-uses the provided
 
 ## Project Structure
 
@@ -184,28 +166,6 @@ This means that we cannot use the built-in BLE capabilities of the Crazyflie whi
 
 Theoretically, the NRF firmware could be modified to expose more "Services" via BLE, but using the same radio for both scanning other BLE devices and communicating with the PC is not something we think is possible.
 
-### State estimator problems
-
-The **state estimator** is a crucial component of the Crazyflie that fuses data from various sensors to estimate the drone's position and orientation. Depending on its configuration, it can use both internal sensors (like the IMU) and external sensors (like the Flow deck).
-
-When we began testing software components that depended on the State Estimator, we encountered several issues. Logged values were unstable, and the position estimate exhibited significant drift over time.
-
-To address this, we first attempted a software fix by forcing a Kalman filter reset:
-
-```python
-scf.cf.param.set_value('kalman.resetEstimation', '1')
-```
-
-We then tried to reduce the drift by desensitizing the gyroscope roll/pitch noise parameter:
-
-```python
-scf.cf.param.set_value('kalman.mNGyro_rollpitch', '0.01')
-```
-
-Neither approach resolved the issue. After a thorough inspection of the board, we concluded that the root cause was likely electrical in nature, specifically, oxidation buildup and general contamination on the PCB.
-
-We disassembled the Crazyflie and cleaned the PCB using 99% isopropanol in an ultrasonic bath. Following this, the sensor readings became stable with no observable drift, and the problem was fully resolved.
-
 ## Contributions
 
 The project was completed cooperatively by all three team members, with everyone participating in all aspects:
@@ -213,12 +173,6 @@ The project was completed cooperatively by all three team members, with everyone
 - Alessandro Ricci Armandi
 - Eyad Issa
 - Giulia Pareschi
-
-## Acknowledgements
-
-We would like to thank JustFanta01 and their team for their previous work on SLAM with the Crazyflie, which provided valuable insights and code that we were able to build upon for our project.
-
-You can find their work here: <https://github.com/JustFanta01/Crazyflie_slam>
 
 ## License
 
