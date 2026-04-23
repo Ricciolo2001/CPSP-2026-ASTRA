@@ -11,7 +11,9 @@ dependencies = [
 ]
 
 [project.scripts]
-astra = "scripts.console:main"
+track = "scripts.track:main"
+rssi = "scripts.rssi:main"
+
 
 [build-system]
 requires = ["hatchling"]

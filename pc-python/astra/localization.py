@@ -95,7 +95,9 @@ def estimate_beacon_position(
 Anchor = tuple[float, float]
 
 
-def trilaterate2d(anchors: list[Anchor], distances: list[float]):
+def trilaterate2d(
+    anchors: list[Anchor], distances: list[float]
+) -> tuple[tuple[float, float], list[float], float]:
     """
     Perform trilateration to estimate the position of a point given its distances
     from multiple anchors. This function uses a least-squares approach to handle
@@ -153,4 +155,4 @@ def trilaterate2d(anchors: list[Anchor], distances: list[float]):
     residuals = np.asarray(residuals, dtype=float)
     total_error = np.linalg.norm(residuals)
 
-    return point, residuals, total_error
+    return (float(x), float(y)), residuals.tolist(), float(total_error)

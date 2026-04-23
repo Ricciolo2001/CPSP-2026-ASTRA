@@ -27,7 +27,9 @@ class MedianEmaFilter:
         return self._ema
 
     @property
-    def value(self) -> float | None:
+    def value(self) -> float:
+        if self._ema is None:
+            raise ValueError("Filter has no value yet; call update() first")
         return self._ema
 
 
@@ -37,4 +39,5 @@ def rssi_to_distance(
     """Log-distance path loss model"""
     if path_loss_n <= 0:
         raise ValueError("path_loss_n must be > 0")
+
     return 10.0 ** ((tx_power_dbm - float(rssi_dbm)) / (10.0 * path_loss_n))
