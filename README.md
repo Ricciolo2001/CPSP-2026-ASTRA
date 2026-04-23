@@ -103,16 +103,11 @@ The project is organized into the following directories:
 ### Pin Connections for the ESP32 module
 
 > [!WARNING]
+> Do not use UART 2 for the ESP32 connection!
 >
-> We have to use UART1 because UART2 is used by the Flow deck.
-
-#### Using UART 2 (Right side of the board)
-
-| ESP32 Pin       | Crazyflie Pin     | Description              |
-| --------------- | ----------------- | ------------------------ |
-| GND             | LEFT PIN 10 (GND) | Ground connection        |
-| GPIO_NUM_5 (TX) | RIGHT PIN 2 (RX)  | ESP32 TX -> Crazyflie RX |
-| GPIO_NUM_6 (RX) | RIGHT PIN 1 (TX)  | Crazyflie TX -> ESP32 RX |
+> Although we initially tried UART 2 (on the right side of the board), the Flow Deck uses its RX pin to send motion data to the CF.
+>
+> This conflict led to drift in the state estimator.
 
 #### Using UART 1 (Left side of the board)
 
@@ -227,3 +222,11 @@ You can find their work here: <https://github.com/JustFanta01/Crazyflie_slam>
 ## License
 
 This project follows the [REUSE 3.3 guidelines](https://reuse.software/) for licensing. You can find a SPDX-License-Identifier in each source file, and the LICENSES directory contains the full text of each license used in the project. Please refer to the LICENSES directory for more information on the licenses used in this project.
+
+## TODOs
+
+- [ ] Write somewhere that we aggressively filter the RSSI values during capture to reduce noise, so we have to stand still for a few seconds to get a good measure.
+
+- [ ] Add section about CF <-> ESP32 communication protocol, with details about the data format and the use of COBS and CRC16 for reliable transmission.
+
+- [ ] Add "Future Improvements" section with ideas for future work, such as implementing a more sophisticated navigation strategy.
