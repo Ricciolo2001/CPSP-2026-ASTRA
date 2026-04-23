@@ -1,44 +1,13 @@
-# Functions related to the Crazyflie
+# SPDX-FileCopyrightText: 2026 Alessandro Ricci
+# SPDX-FileCopyrightText: 2026 Eyad Issa
+# SPDX-FileCopyrightText: 2026 Giulia Pareschi
+#
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
 import threading
 from typing import Callable
-
-from cflib.crazyflie import Crazyflie
-from cflib.crtp.crtpstack import CRTPPacket
-
-
-# CRTP packets carry at most 30 bytes of payload
-CRTP_MAX_PAYLOAD = 30
-
-
-# ---------------------------------------------------------------------------
-# Low-level transport helpers (chunked text over a single CRTP port)
-# ---------------------------------------------------------------------------
-
-
-def send(cf: Crazyflie, port: int, data: bytes) -> None:
-    """
-    Send *data* as one or more CRTP packets of at most CRTP_MAX_PAYLOAD
-    bytes each.
-    """
-    for offset in range(0, len(data), CRTP_MAX_PAYLOAD):
-        chunk = data[offset : offset + CRTP_MAX_PAYLOAD]
-        pk = CRTPPacket()
-        pk.port = port
-        pk.channel = 0
-        pk.data = chunk
-        cf.send_packet(pk)
-
-
-def send_line(cf: Crazyflie, port: int, line: str) -> None:
-    """
-    Encode *line* as UTF-8, append a newline terminator, then send it as
-    one or more CRTP packets of at most CRTP_MAX_PAYLOAD bytes each.
-    """
-    data = (line + "\n").encode("utf-8")
-    send(cf, port, data)
 
 
 class LineBuffer:
