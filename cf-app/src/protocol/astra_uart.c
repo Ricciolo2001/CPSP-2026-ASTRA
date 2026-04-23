@@ -4,6 +4,7 @@
 #include "astra_uart.h"
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -65,6 +66,28 @@ static bool s_initialized = false;
 /* -------------------------------------------------------------------------
  * Internal functions
  * ---------------------------------------------------------------------- */
+
+static bool uart_init(const uint32_t baudrate) {
+#ifdef ASTRA_UART_USE_UART1
+  DEBUG_PRINT("Initializing UART1 ...\n");
+  uart1Init(baudrate);
+  if (!uart1Test()) {
+    DEBUG_PRINT("ERROR: Failed to initialize UART1\n");
+    return false;
+  }
+  DEBUG_PRINT("UART1 initialized with baudrate %" PRIu32 "\n", (uint32_t)baudrate);
+#else
+  DEBUG_PRINT("Initializing UART2 ...\n");
+  uart2Init(baudrate);
+  if (!uart2Test()) {
+    DEBUG_PRINT("ERROR: Failed to initialize UART2\n");
+    return false;
+  }
+  DEBUG_PRINT("UART2 initialized with baudrate %" PRIu32 "\n", (uint32_t)baudrate);
+#endif
+
+  return true;
+}
 
 /**
  * @brief Get one byte from the UART with an infinite timeout.
@@ -181,9 +204,13 @@ static void uart_rx_task(void *params) {
  * Lifecycle
  * ---------------------------------------------------------------------- */
 
-bool astra_uart_init(void) {
+bool astra_uart_init(const uint32_t baudrate) {
   if (s_initialized) {
     return true; /* idempotent */
+  }
+
+  if (!uart_init(baudrate)) {
+    return false;
   }
 
   s_tx_queue = xQueueCreate(TX_QUEUE_LEN, sizeof(astra_uart_packet_t));

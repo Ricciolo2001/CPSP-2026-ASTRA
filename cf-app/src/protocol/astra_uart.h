@@ -31,7 +31,7 @@
  *
  * @return true if all resources were created successfully, false otherwise.
  */
-bool astra_uart_init(void);
+bool astra_uart_init(uint32_t baudrate);
 
 /**
  * @brief Enqueues a packet for transmission over UART.
