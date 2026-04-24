@@ -36,6 +36,9 @@ from cflib.crazyflie import Crazyflie, namedtuple
 from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
+DEFAULT_TX_POWER = -90.0  # dBm at 1 m
+DEFAULT_PATH_LOSS_N = 2.0  # Free-space path loss exponent
+
 DEFAULT_ALPHA = 0.15  # EMA smoothing factor
 DEFAULT_SAMPLE_NUM = 30  # Number of samples to keep for median filtering
 DEFAULT_SAMPLE_INTERVAL_MS = 100  # Log sampling interval in milliseconds
@@ -51,9 +54,9 @@ class GuiRecord:
 Measurement = namedtuple("Measurement", ["timestamp", "x", "y", "distance"])
 
 INITIAL_POSITIONS = [
-    (0.6, 0.0),
-    (0.3, 0.6 * math.sin(math.radians(60))),
     (0.0, 0.0),
+    (1.0, 0.0),
+    (0.0, 1.0),
 ]
 
 
@@ -64,7 +67,7 @@ class BeaconTracker:
     def __init__(
         self,
         scf: SyncCrazyflie,
-        keep: int = 3,
+        keep: int = 6,
         initial_positions: Optional[list[tuple[float, float]]] = None,
     ):
         self.scf = scf
@@ -83,13 +86,18 @@ class BeaconTracker:
 
     def positions(self):
         n = len(self.measurements)
-        if n < len(INITIAL_POSITIONS):
-            yield INITIAL_POSITIONS[n]
 
-        next_pos = self.estimate()
-        if next_pos is None:
-            raise RuntimeError("Unexpected empty measurements in positions()")
-        yield next_pos
+        # Yield initial positions first
+        while n < len(INITIAL_POSITIONS):
+            yield INITIAL_POSITIONS[n]
+            n += 1
+
+        # Then keep yielding estimates
+        while True:
+            next_pos = self.estimate()
+            if next_pos is None:
+                raise RuntimeError("Unexpected empty measurements in positions()")
+            yield next_pos
 
     def track(self, measurement: Measurement):
         self.measurements.append(measurement)
@@ -106,8 +114,8 @@ class GUI:
 
         self.triangle_side = triangle_side
 
-        # Canvas Setup (1 meter = 150 pixels)
-        self.scale = 150
+        # Canvas Setup (1 meter = 100 pixels)
+        self.scale = 100
         self.offset = 250  # Center of a 500x500 canvas
         self.canvas = tk.Canvas(self.root, width=500, height=500, bg="#f0f0f0")
         self.canvas.pack(padx=10, pady=10)
@@ -213,23 +221,29 @@ class AstraController:
         self.scf.cf.param.set_value("kalman.resetEstimation", "1")
         time.sleep(2.0)
 
+        HEIGHT = 0.5
+
+        print(f"[mission] takeoff → {HEIGHT:.2f} m")
+        self.scf.cf.high_level_commander.takeoff(HEIGHT, 2.0)
+        self._wait(3.0)  # wait for takeoff to complete
+
         try:
             for target_x, target_y in self.tracker.positions():
                 if self.should_exit.is_set():
                     print("[mission] should_exit set, aborting mission loop")
                     break
 
-                print(f"[mission] flying to target ({target_x:.2f}, {target_y:.2f})...")
+                print(f"[mission] Flying to target ({target_x:.2f}, {target_y:.2f})...")
                 self.gui_queue.put(GuiRecord(type="target", x=target_x, y=target_y))
 
                 # Pass the queue into the flight function
                 self._move_to_pos((target_x, target_y, 0.5))
 
-                print("\n--> Sampling RSSI...")
+                print("[mission] Sampling RSSI...")
                 rssi = self._sample_rssi(duration=5.0)
 
                 distance = rssi_to_distance(rssi, args.tx_power, args.path_loss_n)
-                print(f"--> Estimated distance: {distance:.2f} m")
+                print(f"[mission] Estimated distance: {distance:.2f} m")
 
                 # Update tracker with the new measurement
                 self.tracker.track(
@@ -246,7 +260,6 @@ class AstraController:
     def _move_to_pos(
         self,
         target: tuple[float, float, float],
-        height: float = 0.5,
         arrival_radius: float = 0.15,
     ):
         cf = self.scf.cf
@@ -257,7 +270,6 @@ class AstraController:
         log_period_ms = 500  # log every 500 ms
 
         def _on_pos(ts_ms: int, data: dict[str, float], _):
-            print(ts_ms.__class__)
             nonlocal last_time
             x = data["stateEstimate.x"]
             y = data["stateEstimate.y"]
@@ -300,14 +312,9 @@ class AstraController:
         try:
             logconf.start()
 
-            # --- takeoff ---
-            print(f"[fly_to_and_land] takeoff → {height:.2f} m")
-            cf.high_level_commander.takeoff(height, 2.0)
-            self._wait(3.0)  # wait for takeoff to complete
-
             # --- go_to ---
             print(
-                f"[fly_to_and_land] go_to ({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
+                f"[move_to_pos] go_to ({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
             )
             cf.high_level_commander.go_to(target[0], target[1], target[2], 0, 0.3)
 
@@ -315,17 +322,12 @@ class AstraController:
             while not self.should_exit.is_set():
                 if sem.acquire(timeout=0.1):
                     print(
-                        "[fly_to_and_land] arrived at "
+                        "[move_to_pos] arrived at "
                         f"({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
                     )
                     break
         finally:
             logconf.stop()
-
-        # stop the CF
-        print("[fly_to_and_land] landing")
-        cf.high_level_commander.land(0.0, 2.0)
-        self._wait(3.0)  # wait for landing to complete
 
     def _sample_rssi(self, duration: float) -> float:
         cf = self.scf.cf
@@ -336,9 +338,19 @@ class AstraController:
 
         filter = MedianEmaFilter(window_size=DEFAULT_SAMPLE_NUM, alpha=DEFAULT_ALPHA)
 
+        last_time = 0
+
         def _on_rssi(ts, data, _):
             rssi = data["astra.bound_device_rssi"]
             filter.update(rssi)
+
+            nonlocal last_time
+            if last_time == 0.0:
+                last_time = ts
+            elif ts - last_time < 1000:  # log every 1 second
+                return
+            last_time = ts
+
             print(
                 f"[log] t={ts:.2f} s\t RSSI={rssi} dBm\t filtered={filter.value:.2f} dBm"
             )
@@ -384,12 +396,6 @@ def parse_args() -> argparse.Namespace:
         help="Path-loss exponent n for the log-distance model (default: 2.0, free-space)",
     )
     parser.add_argument(
-        "--save-csv",
-        default=None,
-        metavar="FILE",
-        help="Save (t, x, y, yaw, rssi_raw, rssi_filtered) rows to FILE as CSV on exit",
-    )
-    parser.add_argument(
         "--mac",
         default=None,
         metavar="AA:BB:CC:DD:EE:FF",
@@ -406,6 +412,24 @@ def parse_args() -> argparse.Namespace:
         "--fw-log",
         action="store_true",
         help="Print firmware DEBUG_PRINT messages directly to console",
+    )
+    parser.add_argument(
+        "--sample-interval",
+        type=int,
+        default=DEFAULT_SAMPLE_INTERVAL_MS,
+        help=f"Log sampling interval in milliseconds (default: {DEFAULT_SAMPLE_INTERVAL_MS})",
+    )
+    parser.add_argument(
+        "--sample-num",
+        type=int,
+        default=DEFAULT_SAMPLE_NUM,
+        help=f"Number of samples to keep for median filtering (default: {DEFAULT_SAMPLE_NUM})",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=DEFAULT_ALPHA,
+        help=f"EMA smoothing factor alpha in (0, 1] (default: {DEFAULT_ALPHA})",
     )
     return parser.parse_args()
 

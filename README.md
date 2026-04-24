@@ -36,9 +36,9 @@ The choice of the ESP32-C3 was motivated by its low cost and compatibility with 
 
 To locate the beacon, we only rely on the RSSI values sampled by the ESP32 module. The beacon continuously advertises its presence, and the ESP32 samples the RSSI values of these advertisements to estimate the distance to the beacon.
 
-The drone moves and iteratively estimates the position of the beacon using trilateration, which is a method of determining the position of a point based on its distance from three or more known points.
+The drone moves and iteratively estimates the position of the beacon using trilateration, which is a method for determining the position of a point based on its distance from three or more known points.
 
-To account for the noise and interference in the RSSI measurements, we apply a strong Kalman filter to the sampled RSSI values during the capture phase. For this reason, we let the drone land before starting the capture.
+To account for the noise and interference in the RSSI measurements, we apply a strong Median & EMA filter to the sampled RSSI values during the capture phase. For this reason, we let the drone land before starting the capture.
 
 ## Communication schema
 
