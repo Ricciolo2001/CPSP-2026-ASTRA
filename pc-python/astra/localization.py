@@ -32,7 +32,7 @@ def estimate_beacon_position(
     y: np.ndarray,
     rssi: np.ndarray,
     *,
-    tx_power_dbm: float = -59.0,
+    tx_power_dbm: float = -40.0,
     path_loss_n: float = 2.0,
     grid_size: int = 40,
     gauss_newton_iters: int = 20,

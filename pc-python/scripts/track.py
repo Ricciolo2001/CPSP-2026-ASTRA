@@ -36,7 +36,7 @@ from cflib.crazyflie import Crazyflie, namedtuple
 from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
-DEFAULT_TX_POWER = -90.0  # dBm at 1 m
+DEFAULT_TX_POWER = -40.0  # dBm at 1 m
 DEFAULT_PATH_LOSS_N = 2.0  # Free-space path loss exponent
 
 DEFAULT_ALPHA = 0.15  # EMA smoothing factor
@@ -278,13 +278,18 @@ class AstraController:
 
             self.gui_queue.put(GuiRecord(type="pos", x=x, y=y))
 
+            dist = math.sqrt((x - target[0]) ** 2 + (y - target[1]) ** 2)
+
+            if dist <= arrival_radius:
+                print(f"  [pos cb] entro in area di arrivo (dist={dist:.3f} m)")
+                sem.release()
+
             if last_time == 0.0:
                 last_time = ts_ms
             elif ts_ms - last_time < log_period_ms:
                 return
             last_time = ts_ms
 
-            dist = math.sqrt((x - target[0]) ** 2 + (y - target[1]) ** 2)
             print(
                 f"  [pos cb] dist={dist:.3f} m"
                 f"\t t={ts_ms:.2f} s"
@@ -293,12 +298,7 @@ class AstraController:
                 f"\t bat={bat:.1f}%"
             )
 
-            if dist <= arrival_radius:
-                print(f"  [pos cb] entro in area di arrivo (dist={dist:.3f} m)")
-                sem.release()
-
         # Listen to postion estimates
-
         logconf = LogConfig(name="move_to_pos", period_in_ms=50)
         logconf.add_variable("stateEstimate.x", "float")  # 4 bytes
         logconf.add_variable("stateEstimate.y", "float")  # 4 bytes
@@ -386,8 +386,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tx-power",
         type=float,
-        default=-59.0,
-        help="Beacon TX power at 1 m in dBm used by the log-distance model (default: -59.0)",
+        default=DEFAULT_TX_POWER,
+        help=f"Beacon TX power at 1 m in dBm used by the log-distance model (default: {DEFAULT_TX_POWER})",
     )
     parser.add_argument(
         "--path-loss-n",

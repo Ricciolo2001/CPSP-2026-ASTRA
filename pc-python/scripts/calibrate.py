@@ -17,7 +17,7 @@ from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
 
 
-DEFAULT_TX_POWER = -90.0  # dBm at 1 m
+DEFAULT_TX_POWER = -40.0  # dBm at 1 m
 DEFAULT_PATH_LOSS_N = 2.0  # Free-space path loss exponent
 DEFAULT_ALPHA = 0.15  # EMA smoothing factor
 DEFAULT_SAMPLE_NUM = 30  # Number of samples to keep for median filtering
