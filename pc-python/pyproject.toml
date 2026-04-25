@@ -18,7 +18,7 @@ dependencies = [
 
 [project.scripts]
 track = "scripts.track:main"
-rssi = "scripts.rssi:main"
+calibrate = "scripts.calibrate:main"
 
 
 [build-system]

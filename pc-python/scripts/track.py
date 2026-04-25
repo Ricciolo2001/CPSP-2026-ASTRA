@@ -264,7 +264,7 @@ class AstraController:
     ):
         cf = self.scf.cf
 
-        sem = threading.Semaphore(0)
+        arrived = threading.Event()
 
         last_time = 0
         log_period_ms = 500  # log every 500 ms
@@ -278,25 +278,27 @@ class AstraController:
 
             self.gui_queue.put(GuiRecord(type="pos", x=x, y=y))
 
-            dist = math.sqrt((x - target[0]) ** 2 + (y - target[1]) ** 2)
+            dist_2d = math.sqrt((x - target[0]) ** 2 + (y - target[1]) ** 2)
 
-            if dist <= arrival_radius:
-                print(f"  [pos cb] entro in area di arrivo (dist={dist:.3f} m)")
-                sem.release()
+            if dist_2d <= arrival_radius:
+                print(f"  [pos cb] entro in area di arrivo (dist={dist_2d:.3f} m)")
+                if not arrived.is_set():
+                    arrived.set()
+                    self.gui_queue.put(
+                        GuiRecord(type="acquired", x=target[0], y=target[1])
+                    )
 
             if last_time == 0.0:
                 last_time = ts_ms
-            elif ts_ms - last_time < log_period_ms:
-                return
-            last_time = ts_ms
-
-            print(
-                f"  [pos cb] dist={dist:.3f} m"
-                f"\t t={ts_ms:.2f} s"
-                f"\t pos=({x:.3f}, {y:.3f}, {z:.3f})"
-                f"\t dest=({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
-                f"\t bat={bat:.1f}%"
-            )
+            elif (ts_ms - last_time) >= log_period_ms:
+                last_time = ts_ms
+                print(
+                    f"  [pos cb] dist={dist_2d:.3f} m"
+                    f"\t t={ts_ms:.2f} s"
+                    f"\t pos=({x:.3f}, {y:.3f}, {z:.3f})"
+                    f"\t dest=({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
+                    f"\t bat={bat:.1f}%"
+                )
 
         # Listen to postion estimates
         logconf = LogConfig(name="move_to_pos", period_in_ms=50)
@@ -320,7 +322,7 @@ class AstraController:
 
             # wait until we enter the arrival radius
             while not self.should_exit.is_set():
-                if sem.acquire(timeout=0.1):
+                if arrived.wait(timeout=0.1):
                     print(
                         "[move_to_pos] arrived at "
                         f"({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
