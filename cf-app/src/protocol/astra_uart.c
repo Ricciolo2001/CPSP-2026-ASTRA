@@ -180,8 +180,6 @@ static void uart_rx_task(void *params) {
      * Add 1 to restore the expected length. */
     size_t frame_len = (size_t)received + 1U;
 
-    DEBUG_PRINT("RX: received %zd bytes\n", received);
-
     size_t raw_len = 0;
     if (!uart_frame_decode(frame_buf, frame_len, scratch, sizeof(scratch), raw_buf, sizeof(raw_buf), &raw_len)) {
       DEBUG_PRINT("RX: frame decode / CRC check failed\n");
