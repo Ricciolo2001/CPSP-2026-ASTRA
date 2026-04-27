@@ -25,23 +25,32 @@ import time
 import tkinter as tk
 import warnings
 from dataclasses import dataclass
-from typing import Optional
+from typing import Literal, Optional
 
+import astra.console
 import cflib
 import cflib.crtp
-from astra.crazyflie import LineBuffer, get_bound_mac, set_bound_mac
-from astra.localization import trilaterate2d
+from astra.crazyflie import check_crazyradio, get_bound_mac, set_bound_mac
+from astra.localization import grid_search_newton, trilaterate2d
 from astra.rssi import MedianEmaFilter, rssi_to_distance
 from cflib.crazyflie import Crazyflie, namedtuple
 from cflib.crazyflie.log import LogConfig
 from cflib.crazyflie.syncCrazyflie import SyncCrazyflie
+from cflib.crazyflie.syncLogger import SyncLogger
 
 DEFAULT_TX_POWER = -40.0  # dBm at 1 m
 DEFAULT_PATH_LOSS_N = 2.0  # Free-space path loss exponent
 
 DEFAULT_ALPHA = 0.15  # EMA smoothing factor
-DEFAULT_SAMPLE_NUM = 30  # Number of samples to keep for median filtering
+DEFAULT_SAMPLE_NUM = 50  # Number of samples to keep for median filtering
 DEFAULT_SAMPLE_INTERVAL_MS = 100  # Log sampling interval in milliseconds
+
+# The height of the beacon above the ground plane. This is used to improve
+# distance estimation by accounting for the vertical offset in the trilateration.
+Z_BEACON = 0.2
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -51,12 +60,13 @@ class GuiRecord:
     y: float
 
 
-Measurement = namedtuple("Measurement", ["timestamp", "x", "y", "distance"])
+Measurement = namedtuple("Measurement", ["timestamp", "x", "y", "distance", "rssi"])
 
 INITIAL_POSITIONS = [
-    (0.0, 0.0),
     (1.0, 0.0),
+    (1.0, 1.0),
     (0.0, 1.0),
+    (0.0, 0.0),
 ]
 
 
@@ -76,13 +86,51 @@ class BeaconTracker:
 
     def estimate(self) -> tuple[float, float]:
 
-        targ, res, l2 = trilaterate2d(
-            [(m.x, m.y) for m in self.measurements],
-            [m.distance for m in self.measurements],
+        logger.debug(f"Estimating position with {len(self.measurements)} measurements:")
+        for m in self.measurements:
+            logger.debug(
+                f"  - t={m.timestamp:.2f} s"
+                f", x={m.x:.2f} m, y={m.y:.2f} m"
+                f", d={m.distance:.2f} m, rssi={m.rssi:.2f} dBm"
+            )
+
+        # Estimator 1: Trilaterazione lineare
+        (tril_x, tril_y), _, te = trilaterate2d(
+            anchors=[(m.x, m.y) for m in self.measurements],
+            distances=[m.distance for m in self.measurements],
+        )
+        logger.info(
+            f"  [trilateration] x={tril_x:.3f} y={tril_y:.3f} total_error={te:.3f}"
+        )
+        if te > 1.0:
+            logger.warning(
+                "  [trilateration] high total error, estimate may be unreliable"
+            )
+
+        # Estimator 2: Gauss-Newton iterativo
+
+        # Consider the best measurement as the one with the strongest RSSI
+        best = max(self.measurements, key=lambda m: m.rssi)
+        # Higher RSSI -> more weight
+        weights = [1.0 / (m.rssi**2) for m in self.measurements]
+
+        est = grid_search_newton(
+            anchors=[(m.x, m.y) for m in self.measurements],
+            distances=[m.distance for m in self.measurements],
+            initial_guess=(best.x, best.y),
+            weights=weights,
+        )
+        logger.info(
+            f"  [Gauss-Newton] x={est.x:.3f} y={est.y:.3f} rmse={est.rmse:.3f} "
+            f"samples_used={est.samples_used} converged={est.converged}"
         )
 
-        print(f"  [trilaterate2d] target={targ} residuals={res} l2={l2:.3f}")
-        return targ
+        if not est.converged:
+            logger.warning(
+                "  [Gauss-Newton] did not converge, consider tuning parameters"
+            )
+
+        return est.x, est.y
 
     def positions(self):
         n = len(self.measurements)
@@ -94,35 +142,28 @@ class BeaconTracker:
 
         # Then keep yielding estimates
         while True:
-            next_pos = self.estimate()
-            if next_pos is None:
-                raise RuntimeError("Unexpected empty measurements in positions()")
-            yield next_pos
+            yield self.estimate()
 
     def track(self, measurement: Measurement):
         self.measurements.append(measurement)
 
 
 class GUI:
-    def __init__(
-        self, tracker: BeaconTracker, gui_queue: queue.Queue, triangle_side: float = 0.6
-    ):
+    def __init__(self, tracker: BeaconTracker, gui_queue: queue.Queue):
         self.tracker = tracker
         self.gui_queue = gui_queue
         self.root = tk.Tk()
         self.root.title("ASTRA Beacon Tracker")
 
-        self.triangle_side = triangle_side
-
         # Canvas Setup (1 meter = 100 pixels)
         self.scale = 100
-        self.offset = 250  # Center of a 500x500 canvas
-        self.canvas = tk.Canvas(self.root, width=500, height=500, bg="#f0f0f0")
+        self.offset = 500  # Center of a 1000x1000 canvas
+        self.canvas = tk.Canvas(self.root, width=1000, height=1000, bg="#f0f0f0")
         self.canvas.pack(padx=10, pady=10)
 
         # Draw Grid
-        self.canvas.create_line(0, self.offset, 500, self.offset, fill="#ddd")
-        self.canvas.create_line(self.offset, 0, self.offset, 500, fill="#ddd")
+        self.canvas.create_line(0, self.offset, 1000, self.offset, fill="#ddd")
+        self.canvas.create_line(self.offset, 0, self.offset, 1000, fill="#ddd")
 
         # UI Elements
         self.drone_marker = self.canvas.create_oval(
@@ -187,25 +228,33 @@ class AstraController:
     should_exit: threading.Event
     tracker: BeaconTracker
 
-    queue: queue.Queue[GuiRecord]
+    gui_queue: queue.Queue[GuiRecord]
     start_thread: threading.Thread
+    estimator: Literal["linear", "gauss"]
 
-    def __init__(self, scf: SyncCrazyflie, queue: queue.Queue[GuiRecord]):
+    def __init__(
+        self,
+        scf: SyncCrazyflie,
+        gui_queue: queue.Queue[GuiRecord],
+        estimator: Literal["linear", "gauss"] = "linear",
+    ):
         self.scf = scf
-        self.gui_queue = queue
+        self.gui_queue = gui_queue
         self.tracker = BeaconTracker(scf)
         self.should_exit = threading.Event()
+        self.estimator = estimator
 
-    def stop(self):
-        t = self.start_thread
-        if t is None or not t.is_alive():
-            raise RuntimeError("Mission not started or already stopped.")
+    def stop(self, timeout: float = 5.0):
+        t = getattr(self, "start_thread", None)
+        if t is None:
+            return
+        if not t.is_alive():
+            return
 
         self.should_exit.set()
-        t.join(timeout=5.0)
+        t.join(timeout=timeout)
         if t.is_alive():
             warnings.warn("Mission thread did not exit in time.")
-
         self.should_exit.clear()
 
     def start(self, args: argparse.Namespace):
@@ -217,169 +266,221 @@ class AstraController:
         """The actual flight sequence."""
 
         # Reset the Kalman estimator
-        print("[mission] resetting Kalman estimator...")
+        logger.info("[mission] resetting Kalman estimator...")
         self.scf.cf.param.set_value("kalman.resetEstimation", "1")
         time.sleep(2.0)
 
-        HEIGHT = 0.5
+        HEIGHT = 1.0
 
-        print(f"[mission] takeoff → {HEIGHT:.2f} m")
+        logger.info(f"[mission] takeoff → {HEIGHT:.2f} m")
         self.scf.cf.high_level_commander.takeoff(HEIGHT, 2.0)
         self._wait(3.0)  # wait for takeoff to complete
+
+        sampling_duration = args.sample_interval * args.sample_num / 1000.0
+        logger.info(
+            f"[mission] sampling duration per point: {sampling_duration:.2f} s "
+            f"(interval={args.sample_interval} ms, num={args.sample_num})"
+        )
+
+        last_pos = (0.0, 0.0, 0.0)
 
         try:
             for target_x, target_y in self.tracker.positions():
                 if self.should_exit.is_set():
-                    print("[mission] should_exit set, aborting mission loop")
+                    logger.info("[mission] should_exit set, aborting mission loop")
                     break
 
-                print(f"[mission] Flying to target ({target_x:.2f}, {target_y:.2f})...")
+                target_x, target_y = self._clamp_target(
+                    src=(last_pos[0], last_pos[1]),
+                    dst=(target_x, target_y),
+                    max_dist=1.5,
+                )
+
+                logger.info(
+                    f"[mission] Flying to target ({target_x:.2f}, {target_y:.2f})..."
+                )
                 self.gui_queue.put(GuiRecord(type="target", x=target_x, y=target_y))
 
                 # Pass the queue into the flight function
-                self._move_to_pos((target_x, target_y, 0.5))
+                last_pos = self._move_to_pos((target_x, target_y, HEIGHT))
+                self._wait(1.0)  # stabilize for a moment at the target
 
-                print("[mission] Sampling RSSI...")
-                rssi = self._sample_rssi(duration=5.0)
+                logger.info("[mission] Sampling RSSI...")
 
-                distance = rssi_to_distance(rssi, args.tx_power, args.path_loss_n)
-                print(f"[mission] Estimated distance: {distance:.2f} m")
+                try:
+                    rssi = self._sample_rssi(duration=sampling_duration)
+                except Exception as e:
+                    logger.error(f"Error during RSSI sampling: {e}", exc_info=True)
+                    return
+
+                distance_3d = rssi_to_distance(rssi, args.tx_power, args.path_loss)
+
+                drone_z = last_pos[2]
+                delta_z = drone_z - Z_BEACON
+
+                if distance_3d > delta_z:
+                    distance_2d = math.sqrt(distance_3d**2 - delta_z**2)
+                else:
+                    distance_2d = 0.01
+
+                logger.info(
+                    f"  RSSI={rssi:.2f} dBm"
+                    f" → distance_3d={distance_3d:.2f} m"
+                    f" → distance_2d={distance_2d:.2f} m (delta_z={delta_z:.2f} m)"
+                )
 
                 # Update tracker with the new measurement
                 self.tracker.track(
-                    Measurement(time.time(), target_x, target_y, distance)
+                    Measurement(time.time(), target_x, target_y, distance_2d, rssi)
                 )
 
         except Exception as e:
-            print(f"Mission Error: {e}")
+            logger.error(f"Mission Error: {e}", exc_info=True)
         finally:
             self.scf.cf.high_level_commander.land(0.0, 2.0)
 
-        print("[mission] done.")
+        logger.info("[mission] done.")
+
+    def _clamp_target(
+        self, src: tuple[float, float], dst: tuple[float, float], max_dist: float
+    ):
+        """Clamp the target position to be within max_dist from the source."""
+        dx = dst[0] - src[0]
+        dy = dst[1] - src[1]
+        dist = math.sqrt(dx**2 + dy**2)
+        if dist > max_dist:
+            scale = max_dist / dist
+            new_x = src[0] + dx * scale
+            new_y = src[1] + dy * scale
+            logger.warning(
+                f"Target ({dst[0]:.2f}, {dst[1]:.2f}) is {dist:.2f} m away, which exceeds the max of {max_dist:.2f} m. "
+                f"Clamping to ({new_x:.2f}, {new_y:.2f})."
+            )
+            return new_x, new_y
+        else:
+            return dst
 
     def _move_to_pos(
         self,
         target: tuple[float, float, float],
         arrival_radius: float = 0.15,
     ):
-        cf = self.scf.cf
+        log_period_ms = 500  # log to console every 0.5 seconds
 
-        arrived = threading.Event()
+        # Listen to postion estimates
+        log_conf = LogConfig(name="move_to_pos", period_in_ms=50)
+        log_conf.add_variable("stateEstimate.x", "float")  # 4 bytes
+        log_conf.add_variable("stateEstimate.y", "float")  # 4 bytes
+        log_conf.add_variable("stateEstimate.z", "float")  # 4 bytes
+        log_conf.add_variable("pm.batteryLevel", "uint8_t")  # 2 bytes
+        # total = 14
 
-        last_time = 0
-        log_period_ms = 500  # log every 500 ms
+        last_pos = None
 
-        def _on_pos(ts_ms: int, data: dict[str, float], _):
-            nonlocal last_time
-            x = data["stateEstimate.x"]
-            y = data["stateEstimate.y"]
-            z = data["stateEstimate.z"]
-            bat = data["pm.batteryLevel"]
+        with SyncLogger(self.scf.cf, log_conf) as cf_logger:
+            logger.info(
+                f"[move_to_pos] go_to ({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
+            )
+            self.scf.cf.high_level_commander.go_to(
+                target[0], target[1], target[2], 0, 1.0
+            )
 
-            self.gui_queue.put(GuiRecord(type="pos", x=x, y=y))
+            last_time = 0
 
-            dist_2d = math.sqrt((x - target[0]) ** 2 + (y - target[1]) ** 2)
+            for ts_ms, data, _ in cf_logger:
+                if self.should_exit.is_set():
+                    logger.info(
+                        "[move_to_pos] should_exit set, breaking position log loop"
+                    )
+                    break
 
-            if dist_2d <= arrival_radius:
-                print(f"  [pos cb] entro in area di arrivo (dist={dist_2d:.3f} m)")
-                if not arrived.is_set():
-                    arrived.set()
+                x = data["stateEstimate.x"]
+                y = data["stateEstimate.y"]
+                z = data["stateEstimate.z"]
+                bat = data["pm.batteryLevel"]
+
+                last_pos = (x, y, z)
+
+                self.gui_queue.put(GuiRecord(type="pos", x=x, y=y))
+
+                dist_2d = math.sqrt((x - target[0]) ** 2 + (y - target[1]) ** 2)
+
+                if dist_2d <= arrival_radius:
+                    logger.info(f"  [pos cb] arrived at target! dist={dist_2d:.3f} m")
                     self.gui_queue.put(
                         GuiRecord(type="acquired", x=target[0], y=target[1])
                     )
-
-            if last_time == 0.0:
-                last_time = ts_ms
-            elif (ts_ms - last_time) >= log_period_ms:
-                last_time = ts_ms
-                print(
-                    f"  [pos cb] dist={dist_2d:.3f} m"
-                    f"\t t={ts_ms:.2f} s"
-                    f"\t pos=({x:.3f}, {y:.3f}, {z:.3f})"
-                    f"\t dest=({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
-                    f"\t bat={bat:.1f}%"
-                )
-
-        # Listen to postion estimates
-        logconf = LogConfig(name="move_to_pos", period_in_ms=50)
-        logconf.add_variable("stateEstimate.x", "float")  # 4 bytes
-        logconf.add_variable("stateEstimate.y", "float")  # 4 bytes
-        logconf.add_variable("stateEstimate.z", "float")  # 4 bytes
-        logconf.add_variable("pm.batteryLevel", "uint8_t")  # 2 bytes
-        # total = 14
-
-        cf.log.add_config(logconf)
-        logconf.data_received_cb.add_callback(_on_pos)
-
-        try:
-            logconf.start()
-
-            # --- go_to ---
-            print(
-                f"[move_to_pos] go_to ({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
-            )
-            cf.high_level_commander.go_to(target[0], target[1], target[2], 0, 0.3)
-
-            # wait until we enter the arrival radius
-            while not self.should_exit.is_set():
-                if arrived.wait(timeout=0.1):
-                    print(
-                        "[move_to_pos] arrived at "
-                        f"({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
-                    )
                     break
-        finally:
-            logconf.stop()
+
+                if last_time == 0.0:
+                    last_time = ts_ms
+                elif (ts_ms - last_time) >= log_period_ms:
+                    last_time = ts_ms
+                    logger.debug(
+                        f"  [pos cb] dist={dist_2d:.3f} m"
+                        f"\t t={ts_ms:.2f} s"
+                        f"\t pos=({x:.3f}, {y:.3f}, {z:.3f})"
+                        f"\t dest=({target[0]:.3f}, {target[1]:.3f}, {target[2]:.3f})"
+                        f"\t bat={bat:.1f}%"
+                    )
+
+        logger.info(
+            "[move_to_pos] arrived at "
+            f"({target[0]:.2f}, {target[1]:.2f}, {target[2]:.2f})"
+        )
+        return last_pos
 
     def _sample_rssi(self, duration: float) -> float:
         cf = self.scf.cf
 
+        rssi_filter = MedianEmaFilter(
+            window_size=DEFAULT_SAMPLE_NUM, alpha=DEFAULT_ALPHA
+        )
+
+        start_time = time.time()
+        last_time = 0
+        log_period_ms = 1000  # log every 1 second
+
         logconf = LogConfig(name="rssi_sample", period_in_ms=DEFAULT_SAMPLE_INTERVAL_MS)
         logconf.add_variable("astra.bound_device_rssi", "int32_t")  # 4 bytes
-        cf.log.add_config(logconf)
 
-        filter = MedianEmaFilter(window_size=DEFAULT_SAMPLE_NUM, alpha=DEFAULT_ALPHA)
+        with SyncLogger(cf, logconf) as cf_logger:
+            for ts, data, _ in cf_logger:
+                if self.should_exit.is_set():
+                    logger.warning(
+                        "[_sample_rssi] should_exit set, breaking RSSI log loop"
+                    )
+                    break
+                elif (time.time() - start_time) >= duration:
+                    logger.debug(
+                        f"[_sample_rssi] sampling duration of {duration:.2f} s reached"
+                    )
+                    break
 
-        last_time = 0
+                rssi = data["astra.bound_device_rssi"]
+                rssi_filter.update(rssi)
 
-        def _on_rssi(ts, data, _):
-            rssi = data["astra.bound_device_rssi"]
-            filter.update(rssi)
-
-            nonlocal last_time
-            if last_time == 0.0:
+                if last_time != 0 and (ts - last_time) >= log_period_ms:
+                    logger.info(
+                        f"[rssi] t={ts:.2f} s\t RSSI={rssi} dBm\t filtered={rssi_filter.value:.2f} dBm"
+                    )
                 last_time = ts
-            elif ts - last_time < 1000:  # log every 1 second
-                return
-            last_time = ts
 
-            print(
-                f"[log] t={ts:.2f} s\t RSSI={rssi} dBm\t filtered={filter.value:.2f} dBm"
-            )
-
-        logconf.data_received_cb.add_callback(_on_rssi)
-
-        try:
-            logconf.start()
-            print(f"[sample_rssi] sampling for {duration:.2f} seconds...")
-            time.sleep(duration)
-        finally:
-            logconf.stop()
-
-        return filter.value
+        return rssi_filter.value
 
     def _wait(self, duration: float):
         """Wait for the specified duration or until should_exit is set."""
-        start_time = time.time()
-        while not self.should_exit.is_set():
-            elapsed = time.time() - start_time
-            if elapsed >= duration:
-                break
-            time.sleep(0.1)
+        self.should_exit.wait(timeout=duration)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "BLE_MAC",
+        help="BLE MAC address of the beacon to track (e.g. AA:BB:CC:DD:EE:FF)",
+    )
+
     parser.add_argument(
         "--uri",
         default="radio://0/83/2M/E7E7E7E7EA",
@@ -392,28 +493,16 @@ def parse_args() -> argparse.Namespace:
         help=f"Beacon TX power at 1 m in dBm used by the log-distance model (default: {DEFAULT_TX_POWER})",
     )
     parser.add_argument(
-        "--path-loss-n",
+        "--path-loss",
         type=float,
         default=2.0,
-        help="Path-loss exponent n for the log-distance model (default: 2.0, free-space)",
+        help="Path-loss exponent for the log-distance model (default: 2.0, free-space)",
     )
     parser.add_argument(
-        "--mac",
-        default=None,
-        metavar="AA:BB:CC:DD:EE:FF",
-        help="BLE MAC address to bind before starting (use 00:00:00:00:00:00 to unbind). "
-        "If omitted, the current bound device is used.",
-    )
-    parser.add_argument(
-        "--triangle-side",
-        type=float,
-        default=0.6,
-        help="Triangle side length in metres for manual guide overlay (default: 0.6)",
-    )
-    parser.add_argument(
-        "--fw-log",
+        "--verbose",
+        "-v",
         action="store_true",
-        help="Print firmware DEBUG_PRINT messages directly to console",
+        help="Enable verbose logging (default: False)",
     )
     parser.add_argument(
         "--sample-interval",
@@ -433,40 +522,44 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_ALPHA,
         help=f"EMA smoothing factor alpha in (0, 1] (default: {DEFAULT_ALPHA})",
     )
+
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    if args.mac is None:
-        print("No --mac specified; unable to proceed", file=sys.stderr)
-        return
 
-    logging.basicConfig(level=logging.WARN)
+    logging_level = logging.DEBUG if args.verbose else logging.INFO
+    astra.console.basic_config(level=logging_level)
+    # logging.getLogger("cflib").setLevel(logging.ERROR)
+
+    logger.debug("Initializing Crazyflie drivers...")
     cflib.crtp.init_drivers()
 
+    if not check_crazyradio():
+        logger.error(
+            "Crazyradio not found or failed to initialize."
+            " Run with --verbose for details."
+        )
+        sys.exit(1)
+
     with SyncCrazyflie(args.uri, cf=Crazyflie(rw_cache="./cache")) as scf:
-        print(f"Connected to {args.uri}")
+        logger.info(f"Connected to {args.uri}")
 
         # Print firmware DEBUG_PRINT messages directly to console
-        if args.fw_log:
-            fw_log = LineBuffer(lambda line: print(f"[CF] {line}", flush=True))
-            scf.cf.console.receivedChar.add_callback(fw_log.feed)
+        fw_log = astra.console.LineBuffer(lambda line: logger.debug(f"[CF]: {line}"))
+        scf.cf.console.receivedChar.add_callback(fw_log.feed)
 
         # Use Kalman estimator
         scf.cf.param.set_value("stabilizer.estimator", "2")
 
         # Set up BLE MAC binding
-        if args.mac is not None:
-            print(f"Setting bound device MAC → {args.mac}")
-            set_bound_mac(scf, args.mac)
-            time.sleep(0.2)  # allow the firmware callback to run
+        logger.info(f"Setting bound device MAC → {args.BLE_MAC}")
+        set_bound_mac(scf, args.BLE_MAC)
+        time.sleep(0.2)  # allow the firmware callback to run
 
         current_mac = get_bound_mac(scf)
-        if current_mac == "00:00:00:00:00:00":
-            print("Bound device: (none — unbound)")
-        else:
-            print(f"Bound device MAC: {current_mac}")
+        logger.info(f"Bound device MAC: {current_mac}")
 
         gui_queue: queue.Queue[GuiRecord] = queue.Queue()
         mission = AstraController(scf, gui_queue)
@@ -474,19 +567,19 @@ def main():
         # Start mission in a separate thread
         mission.start(args)
 
-        gui = GUI(mission.tracker, gui_queue, triangle_side=args.triangle_side)
+        gui = GUI(mission.tracker, gui_queue)
 
         try:
             gui.run()  # tk must run in the main thread
         except KeyboardInterrupt:
-            print("\n[main] Ctrl+C received, stopping...")
+            logger.info("\n[main] Ctrl+C received, stopping...")
         finally:
             mission.stop()
-            print("[main] mission stopped, landing and exiting...")
+            logger.info("[main] mission stopped, landing and exiting...")
             scf.cf.high_level_commander.land(0.0, 2.0)
             time.sleep(2.5)
 
-        exit(0)
+    exit(0)
 
 
 if __name__ == "__main__":

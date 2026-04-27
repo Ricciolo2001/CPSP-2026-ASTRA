@@ -4,37 +4,12 @@
 #
 # SPDX-License-Identifier: MIT
 
-from __future__ import annotations
+import logging
+from contextlib import closing
 
-import threading
-from typing import Callable
+from cflib.drivers.crazyradio import Crazyradio
 
-
-class LineBuffer:
-    """
-    Reassemble lines of text from a stream of UTF-8 text chunks, and call a
-    callback for each complete line.
-
-    Use feed() to add text chunks to the buffer, the callback will be called
-    for each complete line that can be extracted from the buffer, excluding
-    the newline character.
-    """
-
-    def __init__(self, on_line: Callable[[str], None]) -> None:
-        self._buf = ""
-        self._on_line = on_line
-        self._lock = threading.Lock()
-
-    def feed(self, text: str) -> None:
-        to_emit = []
-        with self._lock:
-            self._buf += text
-            while "\n" in self._buf:
-                line, self._buf = self._buf.split("\n", 1)
-                to_emit.append(line)
-
-        for line in to_emit:
-            self._on_line(line)
+logger = logging.getLogger(__name__)
 
 
 ASTRA_PARAM_BOUND_DEVICE_LOW = "astra.bound_device_low"
@@ -81,3 +56,12 @@ def set_bound_mac(scf, mac_str: str) -> None:
     # transient invalid MAC that looks like ``'00:00:CC:DD:EE:FF'``.
     scf.cf.param.set_value(ASTRA_PARAM_BOUND_DEVICE_LOW, str(low))
     scf.cf.param.set_value(ASTRA_PARAM_BOUND_DEVICE_HIG, str(high))
+
+
+def check_crazyradio():
+    try:
+        with closing(Crazyradio()):
+            return True
+    except Exception as e:
+        logger.debug(f"Failed to initialize Crazyradio: {e}", exc_info=True)
+        return False

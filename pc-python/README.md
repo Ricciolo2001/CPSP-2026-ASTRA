@@ -178,8 +178,5 @@ Default parameters match `log_csv.py`: `window=5`, `alpha=0.35`.
 
 - The `tx_power` default (`-40 dBm`) must be calibrated empirically by measuring the
   actual RSSI of the target beacon at exactly 1 metre in the test environment.
-- The `path_loss_n` exponent depends on the environment: `2.0` is free space,
+- The `path_loss` exponent depends on the environment: `2.0` is free space,
   higher values (2.5–4.0) model indoor obstructions.
-- Before flight, verify that the firmware responds to `SCAN`, `BIND`, and `DISTANCE`
-  commands with the expected JSON format. Only `astra/protocol.py` needs updating
-  if the response format changes.

@@ -4,8 +4,6 @@
 #
 # SPDX-License-Identifier: MIT
 
-from __future__ import annotations
-
 from collections import deque
 from statistics import median
 
@@ -40,10 +38,12 @@ class MedianEmaFilter:
 
 
 def rssi_to_distance(
-    rssi_dbm: float, tx_power_dbm: float = -40.0, path_loss_n: float = 2.0
+    rssi_dbm: float,
+    tx_power_dbm: float = -40.0,
+    path_loss: float = 2.0,
 ) -> float:
     """Log-distance path loss model"""
-    if path_loss_n <= 0:
-        raise ValueError("path_loss_n must be > 0")
+    if path_loss <= 0:
+        raise ValueError("path_loss must be > 0")
 
-    return 10.0 ** ((tx_power_dbm - float(rssi_dbm)) / (10.0 * path_loss_n))
+    return 10.0 ** ((tx_power_dbm - float(rssi_dbm)) / (10.0 * path_loss))

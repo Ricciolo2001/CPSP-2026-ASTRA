@@ -4,13 +4,14 @@
 #
 # SPDX-License-Identifier: MIT
 
-from __future__ import annotations
-
+from typing import Optional
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 
-from .rssi import rssi_to_distance
+
+Anchor = tuple[float, float]
 
 
 @dataclass(slots=True)
@@ -19,86 +20,95 @@ class BeaconEstimate:
     y: float
     rmse: float
     samples_used: int
+    converged: bool
 
 
-def _residuals(
-    point: np.ndarray, positions: np.ndarray, distances: np.ndarray
-) -> np.ndarray:
-    return np.linalg.norm(positions - point[None, :], axis=1) - distances
-
-
-def estimate_beacon_position(
-    x: np.ndarray,
-    y: np.ndarray,
-    rssi: np.ndarray,
-    *,
-    tx_power_dbm: float = -40.0,
-    path_loss_n: float = 2.0,
-    grid_size: int = 40,
-    gauss_newton_iters: int = 20,
+def grid_search_newton(
+    anchors: list[Anchor],
+    distances: npt.NDArray[np.number] | list[float],
+    initial_guess: Optional[Anchor] = None,
+    max_iters: int = 50,
+    tol: float = 1e-6,
+    damping: float = 0.1,
+    weights: Optional[npt.NDArray[np.number] | list[float]] = None,
 ) -> BeaconEstimate:
-    """Estimate beacon 2D position from samples collected by the drone.
+    pos = np.asarray(anchors, dtype=float)
+    dist = np.asarray(distances, dtype=float)
+    n_samples = len(pos)
 
-    Strategy:
-    1. convert RSSI to distance using a log-distance model
-    2. coarse grid search inside the explored bounding box
-    3. a few Gauss-Newton refinement steps
-    """
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    rssi = np.asarray(rssi, dtype=float)
+    if n_samples < 3:
+        raise ValueError("At least 3 anchors are required for 2D trilateration.")
 
-    if len(x) != len(y) or len(x) != len(rssi):
-        raise ValueError("x, y and rssi must have the same length")
-    if len(x) < 3:
-        raise ValueError("At least 3 samples are required")
+    if weights is not None:
+        w = np.asarray(weights, dtype=float)
+        if w.shape != dist.shape:
+            raise ValueError("Weights must have the same shape as distances.")
+    else:
+        w = np.ones_like(dist)  # Equal weights if not provided
 
-    positions = np.column_stack([x, y])
-    distances = np.asarray(
-        [
-            rssi_to_distance(v, tx_power_dbm=tx_power_dbm, path_loss_n=path_loss_n)
-            for v in rssi
-        ],
-        dtype=float,
-    )
+    w = w / np.sum(w)  # Normalize weights to sum to 1
 
-    min_x, max_x = float(np.min(x)), float(np.max(x))
-    min_y, max_y = float(np.min(y)), float(np.max(y))
-    pad = max(0.25, 0.15 * max(max_x - min_x, max_y - min_y, 1.0))
-    gx = np.linspace(min_x - pad, max_x + pad, grid_size)
-    gy = np.linspace(min_y - pad, max_y + pad, grid_size)
+    # Step 1: Find a sensible initial guess
+    if initial_guess is not None:
+        point = np.asarray(initial_guess, dtype=float)
+    else:
+        # We solve the linearized system to get a sane starting point.
+        # (x_i^2 + y_i^2 - d_i^2) - (x_1^2 + y_1^2 - d_1^2) = 2x(x_i - x_1) + 2y(y_i - y_1)
+        A = 2 * (pos[1:] - pos[0])
+        b = (
+            dist[0] ** 2
+            - dist[1:] ** 2
+            - np.sum(pos[0] ** 2)
+            + np.sum(pos[1:] ** 2, axis=1)
+        )
+        point, _, rank, _ = np.linalg.lstsq(A, b, rcond=None)
+        if rank < 2:
+            point = np.mean(pos, axis=0)
 
-    best_point = np.array([float(np.mean(x)), float(np.mean(y))], dtype=float)
-    best_cost = float("inf")
-    for px in gx:
-        for py in gy:
-            point = np.array([px, py], dtype=float)
-            residual = _residuals(point, positions, distances)
-            cost = float(np.mean(residual**2))
-            if cost < best_cost:
-                best_cost = cost
-                best_point = point
+    # Step 2: Refine with Gauss-Newton
+    converged = False
+    for _ in range(max_iters):
+        # Calculate residuals: f(x) = ||x - anchor|| - distance
+        diff = point[None, :] - pos
+        current_distances = np.linalg.norm(diff, axis=1)
+        current_distances = np.maximum(current_distances, 1e-9)
 
-    point = best_point.copy()
-    for _ in range(gauss_newton_iters):
-        diff = point[None, :] - positions
-        norms = np.linalg.norm(diff, axis=1)
-        norms = np.maximum(norms, 1e-9)
-        residual = norms - distances
-        jac = diff / norms[:, None]
-        step, *_ = np.linalg.lstsq(jac, residual, rcond=None)
-        point = point - step
-        if np.linalg.norm(step) < 1e-6:
+        residuals = current_distances - dist
+
+        # Jacobian matrix: partial derivatives of the residual w.r.t x and y
+        # J_i = [ (x - x_i)/d_i , (y - y_i)/d_i ]
+        jac = diff / current_distances[:, None]
+
+        # Normal Equations: (J^T * J) * step = J^T * residuals
+        # We add a small damping factor (Levenberg-Marquardt style) to J^T * J
+        # to ensure it remains invertible and steps stay small.
+        jtj = jac.T @ (w[:, None] * jac)
+        jtj += np.eye(2) * damping
+        jtr = jac.T @ (w * residuals)
+
+        try:
+            step = np.linalg.solve(jtj, jtr)
+        except np.linalg.LinAlgError:
             break
 
-    final_residual = _residuals(point, positions, distances)
-    rmse = float(np.sqrt(np.mean(final_residual**2)))
+        point -= step
+
+        if np.linalg.norm(step) < tol:
+            converged = True
+            break
+
+    # Final stats
+    final_diff = point[None, :] - pos
+    final_residuals = np.linalg.norm(final_diff, axis=1) - dist
+    rmse = float(np.sqrt(np.sum(w * final_residuals**2)))
+
     return BeaconEstimate(
-        x=float(point[0]), y=float(point[1]), rmse=rmse, samples_used=len(x)
+        x=float(point[0]),
+        y=float(point[1]),
+        rmse=rmse,
+        samples_used=n_samples,
+        converged=converged,
     )
-
-
-Anchor = tuple[float, float]
 
 
 def trilaterate2d(
