@@ -2,39 +2,21 @@
 
 ## 1. Abstract
 
-**ASTRA** (_Autonomous Signal Tracking & Ranging Aircraft_) is an autonomous drone system that locates the source of a Bluetooth Low Energy (BLE) beacon inside a room in order to navigates towards it.
+**ASTRA** (_Autonomous Signal Tracking & Ranging Aircraft_) is an autonomous drone system designed to locate and navigate towards a Bluetooth Low Energy (BLE) beacon inside a room.
 
-Built on the Crazyflie 2.X platform, it combines onboard RSSI sampling performed by an ESP32 module mounted on the drone with the Flow deck motion tracking to estimate and navigate towards the beacon.
+Built on the Crazyflie 2.X platform, it combines **onboard RSSI sampling**, performed by an ESP32 module mounted on the drone, with the **Flow deck motion tracking** to estimate the beacon's position and guide the drone towards it.
 
 ## 2. Introduction & Motivation
 
-<!-- Rispondi a tre domande: Qual è il problema? (localizzazione indoor senza GPS), Perché è rilevante? (robotica, search & rescue, IoT), Qual è il vostro contributo specifico? Chiudi con una panoramica della struttura del paper. -->
+Indoor localization is a fundamental challenge in Cyber-Physical Systems, where GPS signals are unavailable or unreliable. Solutions such as UWB or camera-based systems offer high accuracy but require fixed infrastructure or significant computational resources, making impractical for lightweight platforms.
 
-Indoor localization is a fundamental challenge in Cyber-Physical Systems, where GPS signals are unavailable or unreliable. Existing solutions such as UWB or camera-based systems offer high accuracy but require fixed infrastructure or significant computational resources, making them unsuitable for lightweight autonomous platforms.
-
-In this work, we present ASTRA, an autonomous drone system that leverages BLE RSSI measurements to locate and navigate towards a beacon source, using only the onboard hardware of the Crazyflie 2.X platform...
-
-The main contributions of this work are:
-
-1. Integration of an ESP32 coprocessor for BLE scanning on a nano-drone platform;
-2. A trilateration-based localization algorithm with RSSI filtering;
-3. A Python application for real-time visualization and control.
-
-The remainder of this paper is organized as follows: Section 3 provides background on BLE ranging, Section 4 describes the system architecture and hardware components and Section 5 details the communication protocols; Section 6 explains the localization algorithm, while Section 7 outlines the navigation strategy; Section 8 presents experimental results, and Section 9 discusses constraints and known issues. Finally, Section 10 concludes the paper and suggests future work directions.
+ASTRA explores the feasibility of BLE RSSI-based localization on a nano-drone, leveraging the Crazyflie 2.X's modular architecture and the ESP32's BLE capabilities to navigate towards a beacon without any external dependency.
 
 ## 3. Background
 
-<!--
-Tre blocchi teorici:
-
-BLE RSSI ranging: il modello log-distance path loss RSSI = A - 10·n·log₁₀(d), dove A è l'RSSI a 1 metro e n è il path loss exponent
-Trilateration: come si ricava la posizione da 3+ distanze note, con il sistema di equazioni circolari
-Filtri: perché Median + EMA e non solo uno dei due
--->
-
 ### BLE RSSI Ranging
 
-Bluetooth Low Energy (BLE) is a wireless communication protocol widely used for short-range applications. BLE devices periodically broadcast advertisement packets that can be detected by nearby receivers. The Received Signal Strength Indicator (RSSI) of these packets can be used to estimate the distance between the transmitter and receiver using the log-distance path loss model:
+Bluetooth Low Energy (BLE) is a wireless communication protocol widely used for short-range applications. BLE devices periodically broadcast advertisement packets that can be detected by nearby receivers. The **Received Signal Strength Indicator** (RSSI) of these packets can be used to estimate the distance between the transmitter and receiver using the log-distance path loss model:
 
 $$RSSI = A - 10 \cdot n \cdot \log_{10}(d)$$
 
@@ -44,34 +26,61 @@ Where:
 - $n$ is the path loss exponent that characterizes the environment,
 - $d$ is the distance between the transmitter and receiver.
 
+We ought to keep in mind that the RSSI is a highly noisy measurement, affected by multipath propagation, interference, and environmental factors.
+
 ### Trilateration
 
 Trilateration is a geometric method used to determine the position of a point based on its distance from three or more known reference points. In a 2D plane, if we have three reference points with known coordinates $(x_i, y_i)$ and their corresponding distances $d_i$ to the target point $(x, y)$, we can derive the following system of equations:
 
 $$(x - x_i)^2 + (y - y_i)^2 = d_i^2 \quad \text{for } i = 1, 2, 3$$
 
-Solving this system allows us to estimate the coordinates of the target point. In practice, due to measurement noise and environmental factors, the equations may not have an exact solution. To account for this, we use a least-squares optimization approach to find the best estimate of the target position that minimizes the error between the measured distances and the distances calculated from the estimated position.
+Solving this system allows us to estimate the coordinates of the target point. In practice, due to measurement noise and environmental factors, the equations may not have an exact solution. To account for this, a least-squares optimization approach can be used to find the best estimate of the target position that minimizes the error between the measured distances and the distances calculated from the estimated position.
+
+### Gauss-Newton Optimization
+
+The Gauss-Newton method is an iterative optimization algorithm used to solve non-linear least squares problems, such as the one arising from trilateration with noisy distance measurements. The algorithm starts from a initial guess of the target position and iteratively refines it by linearizing the residuals and solving a linear least squares problem at each step. The update rule can be expressed as:
+
+$$\begin{bmatrix} x_{k+1} \\ y_{k+1} \end{bmatrix} = \begin{bmatrix} x_k \\ y_k \end{bmatrix} - (J^T J)^{-1} J^T r$$
+
+Where:
+
+- $J$ is the Jacobian matrix of the residuals with respect to the parameters,
+- $r$ is the vector of residuals, defined as the difference between the measured distances and the distances calculated from the current estimate of the target position.
+
+The method converges to a local minimum of the cost function, which represents the best fit of the estimated position to the measured distances.
 
 ### Filtering
 
-Due to the inherent noise in RSSI measurements, we apply a combination of Median and Exponential Moving Average (EMA) filters to the sampled values. The Median filter is effective at removing outliers and sudden spikes in the data, while the EMA provides a smoothed estimate that gives more weight to recent measurements. The choice of filter coefficients is crucial and is typically determined empirically based on the expected dynamics of the system and the noise characteristics of the environment.
+Filtering plays a key role in reducing noise in RSSI measurements and improving the stability of the localization process. In this project, we combine a Median filter with an Exponential Moving Average (EMA) filter to process the sampled RSSI values more reliably.
+
+The Median filter is first applied to suppress outliers and sudden spikes in the data. Its output is then passed through the EMA filter, which smooths the signal over time while assigning greater importance to more recent measurements.
+
+The EMA is defined as:
+
+$$EMA_t = \alpha \cdot RSSI_t + (1 - \alpha) \cdot EMA_{t-1}$$
+
+where:
+
+- $EMA_t$ represents the filtered RSSI at time $t$,
+- $RSSI_t$ is the raw RSSI measurement at time $t$,
+- $\alpha$ is the smoothing factor (between 0 and 1), controlling the balance between responsiveness and stability.
 
 ## 4. System Architecture
 
 The system consists of three main components:
 
 - The Crazyflie drone, which serves as the main platform for navigation and data collection.
-- An ESP32 module mounted on the drone, responsible for performing BLE scanning and sampling the RSSI values from the beacon's advertisements.
+
+- An ESP32 module mounted on the drone and connected via UART, which acts as a coprocessor for performing BLE scanning and sampling the RSSI values from the beacon's advertisements.
+
 - A PC application that receives data from the drone, visualizes the estimated position of the beacon, and allows the user to send commands to the drone.
 
 ```mermaid
 graph TD
-    Beacon -->|BLE| ESP32[ESP32 Module]
-    ESP32 -->|UART| CF[Crazyflie Drone]
+    Beacon <-->|BLE| ESP32[ESP32 Module]
+    ESP32 <-->|UART| CF[Crazyflie Drone]
     CF <-->|CRTP| PC[PC Application]
 ```
-
-![Project schema img](res/schema_progetto.drawio.png)
 
 ### 4.1 Hardware
 
@@ -84,6 +93,7 @@ Lista componente per componente: Crazyflie 2.X, Flow Deck v2, ESP32 (modello esa
 The Crazyflie 2.1 is a nano quadcopter used as the main aerial platform.
 
 **Role:** Executes flight control, stabilization, and onboard processing.
+
 **Key specifications:**
 
 - Weight: ~27 g
@@ -114,7 +124,7 @@ The Flow Deck v2 is an expansion module mounted underneath the drone.
 - Requires textured surfaces for accurate tracking
 - Performance degrades in low-light or reflective conditions
 
-### ESP32 (e.g., ESP32-WROOM-32)
+### ESP32
 
 The ESP32-WROOM-32 is used as a secondary processing and communication unit.
 
@@ -134,13 +144,17 @@ The ESP32-WROOM-32 is used as a secondary processing and communication unit.
 ### BLE Beacon
 
 A BLE beacon is used as a reference point for localization.
+
 **Role:** Broadcasts Bluetooth signals used to estimate distance or proximity.
+
 **Key specifications:**
 
 - Periodic advertising packets (BLE)
 - Low power consumption (battery-powered)
 - Configurable transmission interval and power
-  **Limitations:**
+
+**Limitations:**
+
 - Signal strength (RSSI) is noisy and environment-dependent
 - Accuracy affected by obstacles and interference
 
@@ -162,10 +176,6 @@ The Crazyradio PA is a USB communication interface.
 - Susceptible to interference in crowded RF environments
 
 ### 4.2 Software
-
-<!--
-Descrivi lo stack: firmware Crazyflie (versione, linguaggio), codice ESP32, applicazione PC (libreria cflib, linguaggio, GUI se presente).
--->
 
 The software stack of the ASTRA system is composed of three components:
 
@@ -197,11 +207,6 @@ Between the ESP32 and the Crazyflie, we use a UART communication channel to exch
 
 Since UART is a simple serial communication protocol, we have to ensure a proper data format and reliable transmission. For that we encode the data using COBS (Consistent Overhead Byte Stuffing) and we append a CRC16 checksum to ensure data integrity.
 
-During hardware integration, we identified a conflict between the ESP32 coprocessor UART connection and the Flow Deck v2. Initial wiring routed the ESP32 TX line to the UART2 interface of the CrazyFlie deck connector. Under normal operating conditions this configuration appeared functional; however, under heavy UART bus utilization, the onboard state estimator began producing inaccurate readings, causing the drone to drift unpredictably.
-Further analysis revealed that UART2 is internally shared with the Flow Deck v2, which relies on it to stream optical flow data to the state estimator. Concurrent traffic on the same bus corrupted the flow data stream, degrading position estimation accuracy.
-
-The issue was resolved by migrating the ESP32 connection to the UART1 interface, which is not allocated by any onboard deck driver, eliminating the conflict entirely.
-
 ### Crazyflie to PC
 
 The CrazyFlie communicates with the host PC via the Crazy Real-Time Protocol (CRTP), transported over a bidirectional radio link established through the CrazyRadio USB dongle.
@@ -209,15 +214,6 @@ BLE beacon RSSI sampled value is exposed through the standard CrazyFlie paramete
 The MAC address of the target beacon is configurable at runtime as a writable parameter, allowing the host application to bind the system to a specific device without requiring firmware modifications.
 
 ## 6. Localization Algorithm
-
-<!--
-È la sezione più debole tecnicamente. Dovresti aggiungere:
-
-Formula RSSI → distanza con i parametri scelti
-Schema degli step: hover in N punti → campionamento → filtraggio → trilateration → stima posizione
-Come vengono scelti i punti di campionamento (griglia fissa? pattern di volo?)
-Quante misure per punto e con quale criterio si conferma la posizione
--->
 
 To locate the beacon, we rely only on the RSSI sampled values coming from the ESP32 module.
 The BLE advertiser continuously sends messages that we can sample to estimate the distance from it.
@@ -257,8 +253,33 @@ After calibration, we conducted a series of test flights in a controlled indoor 
 The results showed that the system was able to successfully locate the beacon and navigate towards it, with an average localization error of approximately 0.5 meters. The accuracy varied depending on the position of the beacon and the presence of obstacles, with better performance observed in line-of-sight conditions.
 
 <!--
-TODO: aggiungere grafici o tabelle con i risultati quantitativi, se disponibili. Ad esempio, una tabella con le posizioni reali vs stimate del beacon, o un grafico che mostra la traiettoria del drone durante il test.
+TODO: aggiungere grafici o tabelle con i risultati quantitativi, se disponibili.
+Ad esempio, una tabella con le posizioni reali vs stimate del beacon, o un grafico che mostra la traiettoria del drone durante il test.
 -->
+
+## 9. Issues Encountered
+
+### 9.1 UART Conflict with Flow Deck v2
+
+During hardware integration, a conflict emerged between the ESP32 coprocessor and the Flow Deck v2.
+
+When tested independently, both the ESP32 and the Flow Deck v2 operated correctly. However, once integrated, the drone’s state estimation performance degraded significantly, resulting in noticeable accumulated drift.
+
+Further investigation of the documentation and hardware schematics revealed that both components were sharing the same UART2 interface on the Crazyflie. The Flow Deck v2 relies on UART2 to stream motion data to the onboard state estimator. Simultaneous transmissions from the ESP32 on this interface introduced interference, corrupting the flow data stream and ultimately degrading position estimation accuracy.
+
+**Resolution:**
+
+The issue was resolved by rerouting the ESP32 communication to UART1, which is not used by any of the active deck drivers. This eliminated the interference and restored stable state estimation.
+
+### 9.2 Streaming Data from ESP32 to PC
+
+In the early stages, we implemented a custom application-layer, text-based protocol to stream data directly between the PC and the ESP32, using the Crazyflie as a transparent relay. This approach initially proved useful, as it simplified debugging of BLE scanning, RSSI sampling, and command handling on the ESP32.
+
+However, as development progressed—particularly for localization and navigation on the Crazyflie—this architecture became increasingly impractical. The core issue was its separation from the existing Crazyflie logging system. As a result, we were forced to monitor two independent channels: the standard logging interface for telemetry and the custom protocol for ESP32 data.
+
+**Resolution:**
+
+To address this, we integrated the ESP32 data stream into the standard Crazyflie logging infrastructure. Sampled RSSI values were exposed as regular log variables, while the associated beacon MAC address was implemented as a writable parameter. This unified approach simplified data access and improved overall system maintainability.
 
 ## 9. Constraints & Known Issues
 
