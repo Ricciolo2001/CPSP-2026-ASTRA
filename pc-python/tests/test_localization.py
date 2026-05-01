@@ -72,6 +72,22 @@ class TestInputValidation:
         with pytest.raises(ValueError):
             fn([(0, 0), (0.5, 0), (1, 0)], [1, 1, 1])
 
+    def test_nan_in_anchors(self, fn):
+        with pytest.raises(ValueError):
+            fn([(0, 0), (float("nan"), 0), (0, 1)], [1, 1, 1])
+
+    def test_inf_in_anchors(self, fn):
+        with pytest.raises(ValueError):
+            fn([(0, 0), (float("inf"), 0), (0, 1)], [1, 1, 1])
+
+    def test_nan_in_distances(self, fn):
+        with pytest.raises(ValueError):
+            fn([(0, 0), (1, 0), (0, 1)], [1, float("nan"), 1])
+
+    def test_inf_in_distances(self, fn):
+        with pytest.raises(ValueError):
+            fn([(0, 0), (1, 0), (0, 1)], [1, float("inf"), 1])
+
 
 # ---------------------------------------------------------------------------
 # trilaterate_lstsq
@@ -209,9 +225,33 @@ class TestTrilaterate_LM:
         with pytest.raises(ValueError):
             trilaterate_lm(anchors, distances, weights=[1.0, 1.0])
 
+    def test_zero_weights_raises(self, triangle_anchors):
+        anchors, distances, _ = triangle_anchors
+        with pytest.raises(ValueError):
+            trilaterate_lm(anchors, distances, weights=[0.0, 0.0, 0.0])
+
+    def test_negative_sum_weights_raises(self, triangle_anchors):
+        anchors, distances, _ = triangle_anchors
+        with pytest.raises(ValueError):
+            trilaterate_lm(anchors, distances, weights=[-1.0, -1.0, -1.0])
+
+    def test_initial_guess_wrong_shape_raises(self, triangle_anchors):
+        anchors, distances, _ = triangle_anchors
+        with pytest.raises(ValueError):
+            trilaterate_lm(anchors, distances, initial_guess=(1.0, 2.0, 3.0))
+
+    def test_residuals_are_sqrt_w_scaled(self, square_anchors):
+        """Stored residuals should be sqrt(w_i) * raw_r_i, consistent with RMSE."""
+        anchors, distances, _ = square_anchors
+        w = [1.0, 2.0, 3.0, 4.0]
+        result = trilaterate_lm(anchors, distances, weights=w)
+        stored = np.array(result.residuals)
+        # rmse == sqrt(sum(stored^2)) by construction
+        assert result.rmse == pytest.approx(float(np.sqrt(np.sum(stored**2))), abs=1e-9)
+
     def test_max_iters_1_does_not_crash(self, square_anchors):
         anchors, distances, _ = square_anchors
-        result = trilaterate_lm(anchors, distances, max_iters=1)
+        result = trilaterate_lm(anchors, distances, max_nfev=1)
         assert np.isfinite(result.x)
         assert np.isfinite(result.y)
 

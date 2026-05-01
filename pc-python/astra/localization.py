@@ -4,12 +4,13 @@
 #
 # SPDX-License-Identifier: MIT
 
+import warnings
 from typing import Optional
 from dataclasses import dataclass, field
 
 import numpy as np
 import numpy.typing as npt
-from scipy.optimize import least_squares
+import scipy.optimize
 
 
 Anchor = tuple[float, float]
@@ -25,32 +26,12 @@ class BeaconEstimate:
     residuals: list[float] = field(default_factory=list)
 
 
-def _solve_linear(pos: np.ndarray, dist: np.ndarray) -> np.ndarray:
-    """Solve the linearized trilateration system.
-
-    Builds and solves the linear system obtained by subtracting the first
-    anchor's equation from the rest. Raises ValueError if anchors are
-    collinear. Assumes pos and dist are already validated numpy arrays.
-    """
-    A = 2 * (pos[1:] - pos[0])
-    if np.linalg.matrix_rank(A) < 2:
-        raise ValueError("Anchors are collinear or too close to each other")
-    b = (
-        dist[0] ** 2
-        - dist[1:] ** 2
-        - np.sum(pos[0] ** 2)
-        + np.sum(pos[1:] ** 2, axis=1)
-    )
-    point, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
-    return point
-
-
 def trilaterate_lm(
     anchors: list[Anchor],
     distances: npt.NDArray[np.number] | list[float],
     initial_guess: Optional[Anchor] = None,
-    max_iters: int = 50,
     tol: float = 1e-6,
+    max_nfev: int = 50,
     weights: Optional[npt.NDArray[np.number] | list[float]] = None,
 ) -> BeaconEstimate:
     """
@@ -67,7 +48,7 @@ def trilaterate_lm(
         distances: Distance from the unknown point to each anchor.
         initial_guess: Starting (x, y) for the solver. If None, derived from
             the linearized system.
-        max_iters: Maximum number of Gauss-Newton iterations.
+        max_nfev: Maximum number of function evaluations for the solver.
         tol: Convergence threshold on step/cost/gradient norms (xtol/ftol/gtol).
         weights: Per-anchor weights. Useful when some anchors are more
             reliable than others (e.g., based on signal quality). Normalized
@@ -75,11 +56,13 @@ def trilaterate_lm(
 
     Returns:
         BeaconEstimate with the estimated position, weighted RMSE, number of
-        anchors used, and whether the solver converged within `max_iters`.
+        anchors used, and whether the solver converged within `max_nfev`.
 
     Raises:
-        ValueError: If fewer than 3 anchors are given, or weights shape
-            does not match distances.
+        ValueError: If fewer than 3 anchors are given, weights shape does not
+            match distances, weights sum to a non-positive value,
+            initial_guess does not have exactly 2 elements, or any input
+            contains non-finite values (NaN or inf).
     """
     if any(d < 0 for d in distances):
         raise ValueError(f"Distances cannot be negative: {distances}")
@@ -98,15 +81,24 @@ def trilaterate_lm(
 
     pos = np.asarray(anchors, dtype=float)
     dist = np.asarray(distances, dtype=float)
+
+    if not np.all(np.isfinite(pos)):
+        raise ValueError("Anchor coordinates must be finite (no NaN or inf)")
+    if not np.all(np.isfinite(dist)):
+        raise ValueError("Distances must be finite (no NaN or inf)")
+
     n_samples = len(pos)
+
+    if _check_collinearity(pos):
+        raise ValueError("Anchors are collinear or too close to each other")
 
     if weights is not None:
         w = np.asarray(weights, dtype=float)
-        if w.shape != dist.shape:
-            raise ValueError("Weights must have the same shape as distances.")
     else:
         w = np.ones_like(dist)  # Equal weights if not provided
 
+    if np.sum(w) <= 0:
+        raise ValueError("Weights must sum to a positive value")
     w = w / np.sum(w)  # Normalize weights to sum to 1
 
     # Step 1: Find a sensible initial guess
@@ -122,18 +114,19 @@ def trilaterate_lm(
     def weighted_residuals(p: np.ndarray) -> np.ndarray:
         return sqrt_w * (np.linalg.norm(p - pos, axis=1) - dist)
 
-    opt = least_squares(
+    opt = scipy.optimize.least_squares(
         weighted_residuals,
         x0=point,
         method="lm",
         xtol=tol,
         ftol=tol,
         gtol=tol,
-        max_nfev=max_iters,
+        max_nfev=max_nfev,
     )
 
     final_residuals = np.linalg.norm(opt.x - pos, axis=1) - dist
-    rmse = float(np.sqrt(np.sum(w * final_residuals**2)))
+    weighted_final = sqrt_w * final_residuals
+    rmse = float(np.sqrt(np.sum(weighted_final**2)))
 
     return BeaconEstimate(
         x=float(opt.x[0]),
@@ -141,12 +134,13 @@ def trilaterate_lm(
         rmse=rmse,
         samples_used=n_samples,
         converged=opt.status > 0,
-        residuals=final_residuals.tolist(),
+        residuals=weighted_final.tolist(),
     )
 
 
 def trilaterate_lstsq(
-    anchors: list[Anchor], distances: list[float]
+    anchors: list[Anchor],
+    distances: npt.NDArray[np.number] | list[float],
 ) -> BeaconEstimate:
     """
     Estimate a 2D position from anchor distances using linear least squares.
@@ -169,7 +163,8 @@ def trilaterate_lstsq(
 
     Raises:
         ValueError: If fewer than 3 anchors are given, anchor/distance counts
-            differ, any distance is negative, or anchors are collinear.
+            differ, any distance is negative, anchors are collinear, or any
+            input contains non-finite values (NaN or inf).
     """
     if len(anchors) < 3:
         raise ValueError("At least 3 anchors are required")
@@ -180,11 +175,21 @@ def trilaterate_lstsq(
 
     pos = np.asarray(anchors, dtype=float)
     dist_arr = np.asarray(distances, dtype=float)
+
+    if not np.all(np.isfinite(pos)):
+        raise ValueError("Anchor coordinates must be finite (no NaN or inf)")
+    if not np.all(np.isfinite(dist_arr)):
+        raise ValueError("Distances must be finite (no NaN or inf)")
+
+    if _check_collinearity(pos):
+        raise ValueError("Anchors are collinear or too close to each other")
+
     point = _solve_linear(pos, dist_arr)
 
     x, y = float(point[0]), float(point[1])
     residuals = np.linalg.norm(point - pos, axis=1) - dist_arr
-    rmse = float(np.linalg.norm(residuals))
+
+    rmse = float(np.sqrt(np.mean(residuals**2)))
 
     return BeaconEstimate(
         x=x,
@@ -194,3 +199,34 @@ def trilaterate_lstsq(
         converged=True,
         residuals=residuals.tolist(),
     )
+
+
+def _solve_linear(pos: np.ndarray, dist: np.ndarray) -> np.ndarray:
+    """Solve the linearized trilateration system.
+
+    Builds and solves the linear system obtained by subtracting the first
+    anchor's equation from the rest. Assumes pos and dist are already
+    validated numpy arrays, including the collinearity check.
+    """
+    A = 2 * (pos[1:] - pos[0])
+
+    b = (
+        dist[0] ** 2
+        - dist[1:] ** 2
+        - np.sum(pos[0] ** 2)
+        + np.sum(pos[1:] ** 2, axis=1)
+    )
+    point, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+    return point
+
+
+def _check_collinearity(pos: np.ndarray) -> bool:
+    """Check if the given anchor positions are collinear."""
+    A = 2 * (pos[1:] - pos[0])
+    if np.linalg.matrix_rank(A) < 2:
+        return True
+
+    if np.linalg.cond(A) > 1e6:
+        warnings.warn("Anchors are nearly collinear, results may be unstable")
+
+    return False
