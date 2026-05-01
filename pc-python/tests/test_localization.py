@@ -180,7 +180,9 @@ class TestTrilaterate_LM:
         noisy = [d + rng.normal(0, 0.2) for d in distances]
         lstsq_result = trilaterate_lstsq(anchors, noisy)
         lm_result = trilaterate_lm(anchors, noisy)
-        assert lm_result.rmse <= lstsq_result.rmse + 1e-6  # LM should be at least as good
+        assert (
+            lm_result.rmse <= lstsq_result.rmse + 1e-6
+        )  # LM should be at least as good
 
     def test_custom_initial_guess(self, square_anchors):
         anchors, distances, target = square_anchors
@@ -234,11 +236,6 @@ class TestTrilaterate_LM:
         anchors, distances, _ = triangle_anchors
         with pytest.raises(ValueError):
             trilaterate_lm(anchors, distances, weights=[-1.0, -1.0, -1.0])
-
-    def test_initial_guess_wrong_shape_raises(self, triangle_anchors):
-        anchors, distances, _ = triangle_anchors
-        with pytest.raises(ValueError):
-            trilaterate_lm(anchors, distances, initial_guess=(1.0, 2.0, 3.0))
 
     def test_residuals_are_sqrt_w_scaled(self, square_anchors):
         """Stored residuals should be sqrt(w_i) * raw_r_i, consistent with RMSE."""

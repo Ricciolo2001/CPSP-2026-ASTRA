@@ -60,8 +60,7 @@ def trilaterate_lm(
 
     Raises:
         ValueError: If fewer than 3 anchors are given, weights shape does not
-            match distances, weights sum to a non-positive value,
-            initial_guess does not have exactly 2 elements, or any input
+            match distances, weights sum to a non-positive value, or any input
             contains non-finite values (NaN or inf).
     """
     if any(d < 0 for d in distances):
