@@ -31,7 +31,7 @@ import astra.console
 import cflib
 import cflib.crtp
 from astra.crazyflie import check_crazyradio, get_bound_mac, set_bound_mac
-from astra.localization import grid_search_newton, trilaterate2d
+from astra.localization import trilaterate_lm, trilaterate_lstsq
 from astra.rssi import MedianEmaFilter, rssi_to_distance
 from cflib.crazyflie import Crazyflie, namedtuple
 from cflib.crazyflie.log import LogConfig
@@ -95,14 +95,14 @@ class BeaconTracker:
             )
 
         # Estimator 1: Trilaterazione lineare
-        (tril_x, tril_y), _, te = trilaterate2d(
+        tril = trilaterate_lstsq(
             anchors=[(m.x, m.y) for m in self.measurements],
             distances=[m.distance for m in self.measurements],
         )
         logger.info(
-            f"  [trilateration] x={tril_x:.3f} y={tril_y:.3f} total_error={te:.3f}"
+            f"  [trilateration] x={tril.x:.3f} y={tril.y:.3f} total_error={tril.rmse:.3f}"
         )
-        if te > 1.0:
+        if tril.rmse > 1.0:
             logger.warning(
                 "  [trilateration] high total error, estimate may be unreliable"
             )
@@ -114,7 +114,7 @@ class BeaconTracker:
         # Higher RSSI -> more weight
         weights = [1.0 / (m.rssi**2) for m in self.measurements]
 
-        est = grid_search_newton(
+        est = trilaterate_lm(
             anchors=[(m.x, m.y) for m in self.measurements],
             distances=[m.distance for m in self.measurements],
             initial_guess=(best.x, best.y),

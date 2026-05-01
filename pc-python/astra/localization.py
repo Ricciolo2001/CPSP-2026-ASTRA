@@ -5,10 +5,11 @@
 # SPDX-License-Identifier: MIT
 
 from typing import Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import numpy.typing as npt
+from scipy.optimize import least_squares
 
 
 Anchor = tuple[float, float]
@@ -21,23 +22,83 @@ class BeaconEstimate:
     rmse: float
     samples_used: int
     converged: bool
+    residuals: list[float] = field(default_factory=list)
 
 
-def grid_search_newton(
+def _solve_linear(pos: np.ndarray, dist: np.ndarray) -> np.ndarray:
+    """Solve the linearized trilateration system.
+
+    Builds and solves the linear system obtained by subtracting the first
+    anchor's equation from the rest. Raises ValueError if anchors are
+    collinear. Assumes pos and dist are already validated numpy arrays.
+    """
+    A = 2 * (pos[1:] - pos[0])
+    if np.linalg.matrix_rank(A) < 2:
+        raise ValueError("Anchors are collinear or too close to each other")
+    b = (
+        dist[0] ** 2
+        - dist[1:] ** 2
+        - np.sum(pos[0] ** 2)
+        + np.sum(pos[1:] ** 2, axis=1)
+    )
+    point, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+    return point
+
+
+def trilaterate_lm(
     anchors: list[Anchor],
     distances: npt.NDArray[np.number] | list[float],
     initial_guess: Optional[Anchor] = None,
     max_iters: int = 50,
     tol: float = 1e-6,
-    damping: float = 0.1,
     weights: Optional[npt.NDArray[np.number] | list[float]] = None,
 ) -> BeaconEstimate:
+    """
+    Estimate a 2D position from anchor distances using Levenberg-Marquardt.
+
+    Minimizes the sum of squared residuals r_i(p) = ||p - anchor_i|| - distance_i
+    iteratively. An initial guess is obtained by solving the linearized system;
+    it is then refined with damped Gauss-Newton (Levenberg-Marquardt) steps.
+    Handles noisy distances better than the linear approach, and supports
+    per-anchor weights to down-weight unreliable measurements.
+
+    Args:
+        anchors: (x, y) coordinates of each anchor. At least 3 required.
+        distances: Distance from the unknown point to each anchor.
+        initial_guess: Starting (x, y) for the solver. If None, derived from
+            the linearized system.
+        max_iters: Maximum number of Gauss-Newton iterations.
+        tol: Convergence threshold on step/cost/gradient norms (xtol/ftol/gtol).
+        weights: Per-anchor weights. Useful when some anchors are more
+            reliable than others (e.g., based on signal quality). Normalized
+            internally to sum to 1. Defaults to uniform weights.
+
+    Returns:
+        BeaconEstimate with the estimated position, weighted RMSE, number of
+        anchors used, and whether the solver converged within `max_iters`.
+
+    Raises:
+        ValueError: If fewer than 3 anchors are given, or weights shape
+            does not match distances.
+    """
+    if any(d < 0 for d in distances):
+        raise ValueError(f"Distances cannot be negative: {distances}")
+    if len(anchors) < 3:
+        raise ValueError("At least 3 anchors are required for trilateration")
+    if len(anchors) != len(distances):
+        raise ValueError(
+            "Number of anchors and distances must match: "
+            f"{len(anchors)} anchors vs {len(distances)} distances"
+        )
+    if weights is not None and len(weights) != len(distances):
+        raise ValueError(
+            "Weights must have the same length as distances: "
+            f"{len(weights)} weights vs {len(distances)} distances"
+        )
+
     pos = np.asarray(anchors, dtype=float)
     dist = np.asarray(distances, dtype=float)
     n_samples = len(pos)
-
-    if n_samples < 3:
-        raise ValueError("At least 3 anchors are required for 2D trilateration.")
 
     if weights is not None:
         w = np.asarray(weights, dtype=float)
@@ -52,87 +113,64 @@ def grid_search_newton(
     if initial_guess is not None:
         point = np.asarray(initial_guess, dtype=float)
     else:
-        # We solve the linearized system to get a sane starting point.
-        # (x_i^2 + y_i^2 - d_i^2) - (x_1^2 + y_1^2 - d_1^2) = 2x(x_i - x_1) + 2y(y_i - y_1)
-        A = 2 * (pos[1:] - pos[0])
-        b = (
-            dist[0] ** 2
-            - dist[1:] ** 2
-            - np.sum(pos[0] ** 2)
-            + np.sum(pos[1:] ** 2, axis=1)
-        )
-        point, _, rank, _ = np.linalg.lstsq(A, b, rcond=None)
-        if rank < 2:
-            point = np.mean(pos, axis=0)
+        point = _solve_linear(pos, dist)
 
-    # Step 2: Refine with Gauss-Newton
-    converged = False
-    for _ in range(max_iters):
-        # Calculate residuals: f(x) = ||x - anchor|| - distance
-        diff = point[None, :] - pos
-        current_distances = np.linalg.norm(diff, axis=1)
-        current_distances = np.maximum(current_distances, 1e-9)
+    # Step 2: Refine with scipy's Levenberg-Marquardt
+    # Scale residuals by sqrt(w) so the solver minimises sum(w * r_i^2)
+    sqrt_w = np.sqrt(w)
 
-        residuals = current_distances - dist
+    def weighted_residuals(p: np.ndarray) -> np.ndarray:
+        return sqrt_w * (np.linalg.norm(p - pos, axis=1) - dist)
 
-        # Jacobian matrix: partial derivatives of the residual w.r.t x and y
-        # J_i = [ (x - x_i)/d_i , (y - y_i)/d_i ]
-        jac = diff / current_distances[:, None]
+    opt = least_squares(
+        weighted_residuals,
+        x0=point,
+        method="lm",
+        xtol=tol,
+        ftol=tol,
+        gtol=tol,
+        max_nfev=max_iters,
+    )
 
-        # Normal Equations: (J^T * J) * step = J^T * residuals
-        # We add a small damping factor (Levenberg-Marquardt style) to J^T * J
-        # to ensure it remains invertible and steps stay small.
-        jtj = jac.T @ (w[:, None] * jac)
-        jtj += np.eye(2) * damping
-        jtr = jac.T @ (w * residuals)
-
-        try:
-            step = np.linalg.solve(jtj, jtr)
-        except np.linalg.LinAlgError:
-            break
-
-        point -= step
-
-        if np.linalg.norm(step) < tol:
-            converged = True
-            break
-
-    # Final stats
-    final_diff = point[None, :] - pos
-    final_residuals = np.linalg.norm(final_diff, axis=1) - dist
+    final_residuals = np.linalg.norm(opt.x - pos, axis=1) - dist
     rmse = float(np.sqrt(np.sum(w * final_residuals**2)))
 
     return BeaconEstimate(
-        x=float(point[0]),
-        y=float(point[1]),
+        x=float(opt.x[0]),
+        y=float(opt.x[1]),
         rmse=rmse,
         samples_used=n_samples,
-        converged=converged,
+        converged=opt.status > 0,
+        residuals=final_residuals.tolist(),
     )
 
 
-def trilaterate2d(
+def trilaterate_lstsq(
     anchors: list[Anchor], distances: list[float]
-) -> tuple[tuple[float, float], list[float], float]:
+) -> BeaconEstimate:
     """
-    Perform trilateration to estimate the position of a point given its distances
-    from multiple anchors. This function uses a least-squares approach to handle
-    cases where the distances may not be perfectly accurate.
+    Estimate a 2D position from anchor distances using linear least squares.
+
+    Linearizes the trilateration equations by subtracting one anchor's equation
+    from the rest, eliminating the quadratic terms. The resulting linear system
+    is solved directly with least squares. Fast and closed-form, but the
+    linearization introduces bias when distances are noisy.
 
     Args:
-        anchors: A list of tuples representing the (x, y) coordinates of the anchors.
-        distances: A list of distances from the point to each anchor.
-    Returns:
-        A tuple containing:
-        - The estimated (x, y) coordinates of the point.
-        - A list of residuals (the difference between the estimated distance and the actual distance for each anchor).
-        - The total error (the L2 norm of the residuals).
-    Raises:
-        ValueError: If the number of anchors is less than 3, if the number of
-        anchors and distances do not match, if any distance is negative, or
-        if the anchors are collinear or too close to each other.
-    """
+        anchors: (x, y) coordinates of each anchor. At least 3 required,
+            and they must not be collinear.
+        distances: Distance from the unknown point to each anchor.
+            Must be non-negative and match the length of `anchors`.
 
+    Returns:
+        BeaconEstimate with the estimated position, per-anchor residuals,
+        RMSE, number of anchors used, and converged=True (closed-form, always
+        produces a result).
+
+    Raises:
+        ValueError: If fewer than 3 anchors are given, anchor/distance counts
+            differ, any distance is negative, or anchors are collinear.
+    """
     if len(anchors) < 3:
         raise ValueError("At least 3 anchors are required")
     if len(anchors) != len(distances):
@@ -140,35 +178,19 @@ def trilaterate2d(
     if any(d < 0 for d in distances):
         raise ValueError("Distances cannot be negative")
 
-    x1, y1 = anchors[0]
-    d1 = distances[0]
+    pos = np.asarray(anchors, dtype=float)
+    dist_arr = np.asarray(distances, dtype=float)
+    point = _solve_linear(pos, dist_arr)
 
-    A = []
-    b = []
+    x, y = float(point[0]), float(point[1])
+    residuals = np.linalg.norm(point - pos, axis=1) - dist_arr
+    rmse = float(np.linalg.norm(residuals))
 
-    for i in range(1, len(anchors)):
-        xi, yi = anchors[i]
-        di = distances[i]
-
-        A.append([2 * (xi - x1), 2 * (yi - y1)])
-        b.append(d1**2 - di**2 - x1**2 + xi**2 - y1**2 + yi**2)
-
-    A = np.asarray(A, dtype=float)
-    b = np.asarray(b, dtype=float)
-
-    if np.linalg.matrix_rank(A) < 2:
-        raise ValueError("Anchors are collinear or too close to each other")
-
-    point, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
-
-    residuals = []
-    x, y = point
-
-    for (xi, yi), di in zip(anchors, distances):
-        d_est = np.sqrt((x - xi) ** 2 + (y - yi) ** 2)
-        residuals.append(d_est - di)
-
-    residuals = np.asarray(residuals, dtype=float)
-    total_error = np.linalg.norm(residuals)
-
-    return (float(x), float(y)), residuals.tolist(), float(total_error)
+    return BeaconEstimate(
+        x=x,
+        y=y,
+        rmse=rmse,
+        samples_used=len(anchors),
+        converged=True,
+        residuals=residuals.tolist(),
+    )
