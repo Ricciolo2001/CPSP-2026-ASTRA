@@ -321,8 +321,12 @@ The project was completed cooperatively by all three team members, with everyone
 ## TODO
 
 - Spiegare che quando calcoliamo la distanza proiettiamo la distanza all'altezza del beacon, altrimenti la triangolazione non da i risultati che ci aspettiamo. L'altezza del beacon è hardcoded.
+
 - Attualmente dopo che converge ad un punto ha difficoltà a staccarsene, anche se non è la soluzione. Lo scheduler di posizioni dovrebbe tenere conto di questa cosa e variare i punti a mano a mano.
+
 - Maybe campionare continuamente al posto di fermarsi?
+
+- Il problema è che muovendolo manualmente, il campionamento è mooolto più rumoroso, perchè è impossibile stare fermi
 
 Ultimi parametri buoni (casa):
 
