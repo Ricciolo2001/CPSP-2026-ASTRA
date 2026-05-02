@@ -317,3 +317,17 @@ The project was completed cooperatively by all three team members, with everyone
 - Alessandro Ricci Armandi
 - Eyad Issa
 - Giulia Pareschi
+
+## TODO
+
+- Spiegare che quando calcoliamo la distanza proiettiamo la distanza all'altezza del beacon, altrimenti la triangolazione non da i risultati che ci aspettiamo. L'altezza del beacon è hardcoded.
+- Attualmente dopo che converge ad un punto ha difficoltà a staccarsene, anche se non è la soluzione. Lo scheduler di posizioni dovrebbe tenere conto di questa cosa e variare i punti a mano a mano.
+- Maybe campionare continuamente al posto di fermarsi?
+
+Ultimi parametri buoni (casa):
+
+```shell
+uv run track --uri=radio://0/40/2M/E7E7E7E7E6 \
+      --tx-power=-66 --path-loss=4 --sample-num=80 \
+      3c:dc:75:f2:1b:69 -v
+```
