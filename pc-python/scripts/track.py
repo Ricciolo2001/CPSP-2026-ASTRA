@@ -111,8 +111,12 @@ class BeaconTracker:
 
         # Consider the best measurement as the one with the strongest RSSI
         best = max(self.measurements, key=lambda m: m.rssi)
+
         # Higher RSSI -> more weight
-        weights = [1.0 / (m.rssi**2) for m in self.measurements]
+        max_weight = 1000
+        weights = [
+            min(1.0 / ((m.distance + 1e-3) ** 2), max_weight) for m in self.measurements
+        ]
 
         est = trilaterate_lm(
             anchors=[(m.x, m.y) for m in self.measurements],
