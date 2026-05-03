@@ -22,7 +22,7 @@
 #define DEBUG_MODULE "ASTRA"
 #include "debug.h"
 
-#define ASTRA_UART_BAUDRATE    115200 // Baudrate for UART2 communication with ESP32
+#define ASTRA_UART_BAUDRATE     115200 // Baudrate for UART2 communication with ESP32
 #define ASTRA_BRIDGE_STACK_SIZE 1024   // Stack size (in words, ie x4 bytes on 32-bit targets)
 
 // BLE address of the currently bound device (all zeros if unbound)
@@ -108,8 +108,6 @@ void astra_uart_bridge_task(void *params) {
 
 void appMain(void) {
   DEBUG_PRINT("Initializing ASTRA application...\n");
-
-
 
   // Initialize the ASTRA UART protocol layer (creates queues and tasks)
   DEBUG_PRINT("Initializing ASTRA UART protocol layer ...\n");
