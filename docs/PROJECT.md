@@ -8,9 +8,9 @@ Built on the Crazyflie 2.X platform, it combines **onboard RSSI sampling**, perf
 
 ## 2. Introduction & Motivation
 
-Indoor localization is a fundamental challenge in Cyber-Physical Systems, where GPS signals are unavailable or unreliable. Solutions such as UWB or camera-based systems offer high accuracy but require fixed infrastructure or significant computational resources, making impractical for lightweight platforms.
+Positioning systems such as GPS and UWB are widely used for outdoor and indoor localization; however, they require either direct sky visibility or fixed infrastructure. Camera-based systems, while accurate, demand significant computational resources and are sensitive to lighting conditions.
 
-ASTRA explores the feasibility of BLE RSSI-based localization on a nano-drone, leveraging the Crazyflie 2.X's modular architecture and the ESP32's BLE capabilities to navigate towards a beacon without any external dependency.
+This project investigates whether BLE RSSI-based localization can provide a viable, infrastructure-free alternative for indoor positioning on resource-constrained nano-drones. By leveraging the modular architecture of the Crazyflie 2.X and the BLE capabilities of the ESP32, the system is designed as a lightweight, low-cost solution that operates without external infrastructure.
 
 ## 3. Background
 
@@ -26,7 +26,9 @@ Where:
 - $n$ is the path loss exponent that characterizes the environment,
 - $d$ is the distance between the transmitter and receiver.
 
-We ought to keep in mind that the RSSI is a highly noisy measurement, affected by multipath propagation, interference, and environmental factors.
+RSSI is, however, a highly noisy measurement, affected by multipath propagation, interference, and environmental factors. As a result, raw RSSI values are generally unsuitable for direct distance estimation without filtering.
+
+To determine the values for $A$ and $n$, a calibration procedure is typically performed in the target environment, where RSSI values are measured at known distances from the beacon and the parameters are fitted to the data.
 
 ### Trilateration
 
@@ -34,11 +36,12 @@ Trilateration is a geometric method used to determine the position of a point ba
 
 $$(x - x_i)^2 + (y - y_i)^2 = d_i^2 \quad \text{for } i = 1, 2, 3$$
 
-Solving this system allows us to estimate the coordinates of the target point. In practice, due to measurement noise and environmental factors, the equations may not have an exact solution. To account for this, a least-squares optimization approach can be used to find the best estimate of the target position that minimizes the error between the measured distances and the distances calculated from the estimated position.
+Solving this system allows us to estimate the coordinates of the target point. In practice, due to measurement noise and environmental factors, the equations may not have an exact solution.
+To address this, a least-squares optimization approach can be used to find the best estimate of the target position that minimizes the error between the measured distances and the distances calculated from the estimated position.
 
 ### Gauss-Newton Optimization
 
-The Gauss-Newton method is an iterative optimization algorithm used to solve non-linear least squares problems, such as the one arising from trilateration with noisy distance measurements. The algorithm starts from a initial guess of the target position and iteratively refines it by linearizing the residuals and solving a linear least squares problem at each step. The update rule can be expressed as:
+The Gauss-Newton method is an iterative optimization algorithm used to solve non-linear least squares problems, such as the one arising from trilateration with noisy distance measurements. The algorithm starts from an initial guess of the target position and iteratively refines it by linearizing the residuals and solving a linear least squares problem at each step. The update rule can be expressed as:
 
 $$\begin{bmatrix} x_{k+1} \\ y_{k+1} \end{bmatrix} = \begin{bmatrix} x_k \\ y_k \end{bmatrix} - (J^T J)^{-1} J^T r$$
 
@@ -67,13 +70,7 @@ where:
 
 ## 4. System Architecture
 
-The system consists of three main components:
-
-- The Crazyflie drone, which serves as the main platform for navigation and data collection.
-
-- An ESP32 module mounted on the drone and connected via UART, which acts as a coprocessor for performing BLE scanning and sampling the RSSI values from the beacon's advertisements.
-
-- A PC application that receives data from the drone, visualizes the estimated position of the beacon, and allows the user to send commands to the drone.
+The system consists of three main components: the Crazyflie drone, an ESP32 coprocessor, and a PC application.
 
 ```mermaid
 graph TD
@@ -83,10 +80,6 @@ graph TD
 ```
 
 ### 4.1 Hardware
-
-<!--
-Lista componente per componente: Crazyflie 2.X, Flow Deck v2, ESP32 (modello esatto), beacon BLE usato, CrazyRadio. Per ognuno: ruolo, specifiche rilevanti, eventuali limitazioni.
--->
 
 ### Crazyflie 2.X
 
@@ -138,7 +131,6 @@ The ESP32-WROOM-32 is used as a secondary processing and communication unit.
 
 **Limitations:**
 
-- Power consumption can be significant
 - BLE positioning accuracy is limited
 
 ### BLE Beacon
@@ -172,28 +164,30 @@ The Crazyradio PA is a USB communication interface.
 
 **Limitations:**
 
-- Limited communication range (~1 km line-of-sight, much less indoors)
 - Susceptible to interference in crowded RF environments
 
 ### 4.2 Software
 
 The software stack of the ASTRA system is composed of three components:
 
-1. **Crazyflie custom application:** A custom application running on the Crazyflie that implements the localization and navigation logic, processes the RSSI data received from the ESP32, and sends telemetry data to the PC.
+1. **Crazyflie custom application:**
+   A custom Crazyflie app layer module that implements the localization and navigation logic, processes the RSSI data received from the ESP32, and sends telemetry data to the PC.
 
-2. **ESP32 firmware:** A custom firmware running on the ESP32 module that performs BLE scanning, samples RSSI values, and communicates with the Crazyflie via UART.
+2. **ESP32 firmware:**
+   A custom firmware running on the ESP32 module that performs BLE scanning, samples RSSI values, and communicates with the Crazyflie via UART.
 
-3. **PC application:** A Python application that uses the `cflib` library to communicate with the Crazyflie, visualize the estimated position of the beacon, and send high level commands to the drone.
+3. **PC application:**
+   A Python application that uses the `cflib` library to communicate with the Crazyflie, visualize the estimated position of the beacon, and send high-level commands to the drone.
 
 ## 5. Communication Protocol
 
 The communication between the components is structured as follows:
 
-- **ESP32 to beacon**
-- **Communication between ESP32 and Crazyflie**
-- **Drone to PC via crazyradio**
+- **Beacon to ESP32**
+- **ESP32 to Crazyflie**
+- **Crazyflie to PC**
 
-### Beacon to ESP32
+### Beacon to ESP32 (BLE)
 
 BLE beacons advertise their presence by broadcasting advertisement messages at regular intervals (200ms).
 The ESP32 module mounted on the Crazyflie scans for these advertisements and samples the RSSI values, which are then used to estimate the distance to the beacon.
@@ -201,44 +195,55 @@ The ESP32 module mounted on the Crazyflie scans for these advertisements and sam
 When the ESP32 is not bound, it continuously scans for BLE advertisements, but it does not store or send any data to the Crazyflie.
 Once it receives a BIND command with a specific BLE MAC address, it starts sampling the RSSI values for that beacon and sends the data back to the Crazyflie at regular intervals.
 
-### ESP32 to Crazyflie
+### ESP32 to Crazyflie (UART)
 
-Between the ESP32 and the Crazyflie, we use a UART communication channel to exchange data.
+Communication between the ESP32 and the Crazyflie is handled via a UART interface operating at 115200 bps.
 
 Since UART is a simple serial communication protocol, we have to ensure a proper data format and reliable transmission. For that we encode the data using COBS (Consistent Overhead Byte Stuffing) and we append a CRC16 checksum to ensure data integrity.
 
-### Crazyflie to PC
+### Crazyflie to PC (CRTP)
 
-The CrazyFlie communicates with the host PC via the Crazy Real-Time Protocol (CRTP), transported over a bidirectional radio link established through the CrazyRadio USB dongle.
-BLE beacon RSSI sampled value is exposed through the standard CrazyFlie parameter and logging infrastructure.
+The Crazyflie communicates with the host PC via the Crazy Real-Time Protocol (CRTP), transported over a bidirectional radio link established through the CrazyRadio USB dongle.
+
+The sampled RSSI values are exposed to the host PC through the standard Crazyflie logging infrastructure.
 The MAC address of the target beacon is configurable at runtime as a writable parameter, allowing the host application to bind the system to a specific device without requiring firmware modifications.
 
-## 6. Localization Algorithm
+## 6. Localization & Navigation
 
-To locate the beacon, we rely only on the RSSI sampled values coming from the ESP32 module.
-The BLE advertiser continuously sends messages that we can sample to estimate the distance from it.
+The localization and navigation logic is handled by a mission application running on the host PC, which coordinates the drone's flight phases through high-level commands sent via CRTP.
 
-The drone estimates the position of the beacon using trilateration, which is a method to determine the position of a point based on its distance from three or more known points.
+### Phase 1 — Takeoff
 
-To account for the noise and interference in the RSSI measurements, we apply a strong Median & EMA filter to the sampled RSSI values during the capture phase and we repeat more than 3 measurements to confirm the exact position of the beacon.
+The mission begins by resetting the Kalman state estimator, followed by a takeoff command that brings the drone to a fixed operating altitude of 1.0 m, where it hovers.
 
-## 7. Navigation Strategy
+### Phase 2 — Data Collection
 
-The navigation strategy is handled by a mission application running on the host PC, which coordinates the drone's flight phases through high-level commands sent via CRTP.
+The drone navigates to a set of predefined waypoints arranged in an L-shaped pattern, with the takeoff point at the corner.
+The four waypoints are located at (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), and (0.0, 0.0) meters.
 
-**Phase 1 — Takeoff:**
-The mission begins with a takeoff command that brings the drone to a fixed operating altitude, where it hovers.
+At each waypoint, the drone hovers and collects RSSI samples for a configurable duration (default: 5 s, at 100 ms intervals).
+The raw samples are processed through a Median-EMA filter (window = 80, α = 0.15) to produce a single filtered RSSI estimate.
+This is then converted to a 3D distance using the log-distance model, and projected onto the 2D ground plane by accounting for the vertical offset between the drone and the beacon.
 
-**Phase 2 — Sampling Grid:**
-The drone navigates to a set of predefined waypoints arranged in an L pattern with the takeoff point at the corner.
-At each waypoint, the drone hovers while the ESP32 collects and filters RSSI samples.
-A minimum of three valid distance estimates at distinct locations are required before proceeding to localization.
+$$d_{2D}= \sqrt{d\_{3D}^2 - \Delta z^2}$$
 
-**Phase 3 — Localization & Tracking:**
-Once sufficient samples are collected, the trilateration algorithm produces an initial estimate of the beacon position and the drone navigates towards it.
-The system then enters a continuous refinement loop: new RSSI measurements are collected at the current position, the beacon estimate is updated, and the drone adjusts its trajectory accordingly.
+Each measurement, consisting of the waypoint coordinates and the estimated 2D distance, is stored in a sliding window of the 6 most recent samples.
 
-This loop runs indefinitely, keeping the drone hovering above the estimated beacon position and correcting for drift in the estimate over time.
+### Phase 3 — Initial Estimation
+
+Once at least three valid measurements are available, the system estimates the beacon’s position using a Gauss–Newton optimization based on the collected data. A baseline estimate is also computed using linear least-squares trilateration for comparison.
+
+The Gauss–Newton optimizer is initialized at the position corresponding to the strongest RSSI measurement and applies inverse-square distance-based weighting ($w_i = 1/d_i^2$), thereby assigning greater importance to closer and more reliable measurements.
+
+Convergence and RMSE are evaluated at each iteration. If the optimizer fails to converge, or if the RMSE exceeds 1.0 m, a warning is logged and the estimate is flagged as unreliable.
+
+### Phase 4 — Closed-Loop Navigation
+
+Once an initial beacon position is estimated, the drone navigates towards it.
+The system then enters a continuous refinement loop: new RSSI measurements are collected at the current position, the sliding window is updated, and the beacon estimate is refined.
+The drone continuously adjusts its trajectory toward the updated estimate, correcting for drift over time.
+
+To prevent unsafe jumps, target positions are clamped to a maximum displacement of 1.5 m from the drone's current position.
 
 > [!WARN]
 > In the current implementation, the drone does not perform obstacle avoidance and does not terminate the mission autonomously.
@@ -281,9 +286,9 @@ However, as development progressed—particularly for localization and navigatio
 
 To address this, we integrated the ESP32 data stream into the standard Crazyflie logging infrastructure. Sampled RSSI values were exposed as regular log variables, while the associated beacon MAC address was implemented as a writable parameter. This unified approach simplified data access and improved overall system maintainability.
 
-## 9. Constraints & Known Issues
+## 10. Constraints & Known Issues
 
-Deploying the system on a small platform such as the CrazyFlie introduces several hardware and environmental constraints that were taken into account during development.
+Deploying the system on a small platform such as the Crazyflie introduces several hardware and environmental constraints that were taken into account during development.
 
 - **Shadowing, Multipath and RF Interference:**
   RSSI-based ranging is inherently sensitive to multipath propagation and electromagnetic interference. On a compact platform, motor drivers and switching power electronics are in close physical proximity to the radio antenna, introducing high-frequency noise that may corrupt the analog-to-digital conversion of the received signal. Additionally, mounting the ESP32 coprocessor on a deck immediately above the drone body can produce a shadowing effect, further degrading signal quality and increasing measurement variance.
@@ -292,25 +297,35 @@ Deploying the system on a small platform such as the CrazyFlie introduces severa
   Standard RSSI measurement pipelines do not account for supply voltage variations. In our configuration, the ESP32 is powered directly from the LiPo battery through the integrated battery management system (BMS). Under high power demand, the supply rail may drop below the 3.3 V nominal operating voltage of the ESP32, causing erroneous RSSI readings and, in severe cases, triggering an unintended device reboot that interrupts the ranging pipeline.
 
 - **Top Deck Occupancy:**
-  Interfacing the ESP32 coprocessor with the CrazyFlie requires use of UART1, the only UART interface not allocated by onboard deck drivers. Routing this connection through the deck connector physically occupies the top expansion port, precluding the simultaneous use of any additional deck hardware that relies on the same connector.
+  Interfacing the ESP32 coprocessor with the Crazyflie requires use of UART1, the only UART interface not allocated by onboard deck drivers. Routing this connection through the deck connector physically occupies the top expansion port, precluding the simultaneous use of any additional deck hardware that relies on the same connector.
 
-## 10. Conclusions & Future Work
+### 11. Conclusions & Future Work
 
-The primary limitation of the current architecture is the dependency on an external ESP32 module for BLE ranging, which occupies the top deck expansion port and introduces the hardware constraints discussed in the previous section.
-This limitation could be addressed by using the internal BLE radio of the CrazyFlie, which is already present on the nRF52840 microcontroller.
-Migrating the beacon scanning and distance estimation logic directly onto the CrazyFlie would eliminate the need to use an ESP entirely freeing the top deck expansion port for additional sensor hardware.
+ASTRA demonstrated that BLE RSSI-based localization is feasible on a nano-drone platform, successfully locating a beacon within a 5×5 m indoor environment with an average error of approximately 0.5 m. The system operated without any external infrastructure beyond the beacon itself, validating the core premise of the project.
 
-- First, the Ranger deck could be mounted to provide precise altitude and obstacle distance measurements, improving flight stability and enabling more accurate three-dimensional positioning.
-- Second, replacing the BLE antenna with a Loco Positioning deck would allow UWB-based ranging against fixed anchors, offering centimetre-level distance estimation accuracy that far exceeds what is achievable through RSSI-based approaches.
+### Hardware improvements
 
-## 11. References
+One potential improvement is to migrate the beacon scanning and distance estimation directly onto the nRF52840 microcontroller already onboard the Crazyflie. This would eliminate the need for the ESP32 and free up the top deck expansion port for additional sensors.
+
+Alternatively, a simpler approach would be to use longer deck pins, allowing the ESP32 to be stacked with other expansion decks while still communicating via UART1, which is not used by the Ranger deck. This configuration would enable simultaneous use of the Ranger deck, providing obstacle distance measurements in all horizontal directions.
+
+Although the hardware setup would support this, the Extended Kalman Filter does not currently incorporate these measurements. Integrating this data could improve the accuracy and robustness of the horizontal position estimate.
+
+### Algorithmic improvements
+
+Once the system converges on a beacon estimate, the position scheduler tends to repeatedly return the same target coordinates, causing the drone to hover in place even if the estimate is inaccurate.
+This occurs because new measurements collected at the same location do not add geometric diversity to the sliding window, preventing the trilateration from refining the estimate further.
+
+The position scheduler could be extended to introduce deliberate positional perturbations when stagnation is detected. This would maintain geometric diversity in the measurement set and allow the trilateration process to continue refining the estimate.
+
+## 12. References
 
 [BITCRAZE](https://www.bitcraze.io/documentation/repository/)
-[CRTP_COMMUNICATION](https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/crtp/)
-[CPX_PACKET_STRUCTURE](https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/cpx/)
-[BLE_AND_CRAZYRADIO](https://www.bitcraze.io/documentation/repository/crazyflie2-nrf-firmware/master/protocols/ble/)
+[CRTP_COMMUNICATION](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/crtp/)
+[CPX_PACKET_STRUCTURE](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/cpx/)
+[BLE_AND_CRAZYRADIO](https://www.bitcraze.io/documentation/repository/Crazyflie2-nrf-firmware/master/protocols/ble/)
 
-## 12. Contributions
+## 13. Contributions
 
 The project was completed cooperatively by all three team members, with everyone participating in all aspects:
 
@@ -319,12 +334,6 @@ The project was completed cooperatively by all three team members, with everyone
 - Giulia Pareschi
 
 ## TODO
-
-- Spiegare che quando calcoliamo la distanza proiettiamo la distanza all'altezza del beacon, altrimenti la triangolazione non da i risultati che ci aspettiamo. L'altezza del beacon è hardcoded.
-
-- Attualmente dopo che converge ad un punto ha difficoltà a staccarsene, anche se non è la soluzione. Lo scheduler di posizioni dovrebbe tenere conto di questa cosa e variare i punti a mano a mano.
-
-- Maybe campionare continuamente al posto di fermarsi?
 
 - Il problema è che muovendolo manualmente, il campionamento è mooolto più rumoroso, perchè è impossibile stare fermi
 
