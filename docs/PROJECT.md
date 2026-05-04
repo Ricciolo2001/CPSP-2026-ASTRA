@@ -4,7 +4,7 @@
 
 **ASTRA** (_Autonomous Signal Tracking & Ranging Aircraft_) is an autonomous drone system designed to locate and navigate towards a Bluetooth Low Energy (BLE) beacon inside a room.
 
-Built on the Crazyflie 2.X platform, it combines **onboard RSSI sampling**, performed by an ESP32 module mounted on the drone, with the **Flow deck motion tracking** to estimate the beacon's position and guide the drone towards it.
+Built on the Crazyflie 2.X platform [1], it combines **onboard RSSI sampling**, performed by an ESP32 module mounted on the drone, with the **Flow deck motion tracking** to estimate the beacon's position and guide the drone towards it.
 
 ## 2. Introduction & Motivation
 
@@ -83,7 +83,7 @@ graph TD
 
 ### Crazyflie 2.X
 
-The Crazyflie 2.1 is a nano quadcopter used as the main aerial platform.
+The Crazyflie 2.1 is a nano quadcopter used as the main aerial platform [1].
 
 **Role:** Executes flight control, stabilization, and onboard processing.
 
@@ -102,7 +102,7 @@ The Crazyflie 2.1 is a nano quadcopter used as the main aerial platform.
 
 ### Flow Deck v2
 
-The Flow Deck v2 is an expansion module mounted underneath the drone.
+The Flow Deck v2 is an expansion module mounted underneath the drone [1].
 
 **Role:** Provides relative positioning by measuring motion and distance to the ground.
 
@@ -152,7 +152,7 @@ A BLE beacon is used as a reference point for localization.
 
 ### Crazyradio
 
-The Crazyradio PA is a USB communication interface.
+The Crazyradio PA is a USB communication interface [1].
 
 **Role:** Enables wireless communication between the drone and a ground station (PC).
 
@@ -171,7 +171,7 @@ The Crazyradio PA is a USB communication interface.
 The software stack of the ASTRA system is composed of three components:
 
 1. **Crazyflie custom application:**
-   A custom Crazyflie app layer module that implements the localization and navigation logic, processes the RSSI data received from the ESP32, and sends telemetry data to the PC.
+   A custom Crazyflie app layer module that implements the localization and navigation logic, processes the RSSI data received from the ESP32, and sends telemetry data to the PC. This module leverages the standard Crazyflie firmware structure [1].
 
 2. **ESP32 firmware:**
    A custom firmware running on the ESP32 module that performs BLE scanning, samples RSSI values, and communicates with the Crazyflie via UART.
@@ -199,11 +199,11 @@ Once it receives a BIND command with a specific BLE MAC address, it starts sampl
 
 Communication between the ESP32 and the Crazyflie is handled via a UART interface operating at 115200 bps.
 
-Since UART is a simple serial communication protocol, we have to ensure a proper data format and reliable transmission. For that we encode the data using COBS (Consistent Overhead Byte Stuffing) and we append a CRC16 checksum to ensure data integrity.
+Since UART is a simple serial communication protocol, we have to ensure a proper data format and reliable transmission. We use **COBS (Consistent Overhead Byte Stuffing)** for packet framing, ensuring that we can reliably identify the start and end of messages. Additionally, we append a **CRC16 checksum** to each packet to ensure data integrity and detect transmission errors. This communication can be extended to use the **CPX (Crazyflie Packet Exchange)** structure [3] for more complex data routing.
 
 ### Crazyflie to PC (CRTP)
 
-The Crazyflie communicates with the host PC via the Crazy Real-Time Protocol (CRTP), transported over a bidirectional radio link established through the CrazyRadio USB dongle.
+The Crazyflie communicates with the host PC via the **Crazy Real-Time Protocol (CRTP)** [2], transported over a bidirectional radio link established through the CrazyRadio USB dongle.
 
 The sampled RSSI values are exposed to the host PC through the standard Crazyflie logging infrastructure.
 The MAC address of the target beacon is configurable at runtime as a writable parameter, allowing the host application to bind the system to a specific device without requiring firmware modifications.
@@ -223,9 +223,9 @@ The four waypoints are located at (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), and (0.0, 
 
 At each waypoint, the drone hovers and collects RSSI samples for a configurable duration (default: 5 s, at 100 ms intervals).
 The raw samples are processed through a Median-EMA filter (window = 80, α = 0.15) to produce a single filtered RSSI estimate.
-This is then converted to a 3D distance using the log-distance model, and projected onto the 2D ground plane by accounting for the vertical offset between the drone and the beacon.
+This is then converted to a 3D distance using the log-distance model, and projected onto the 2D ground plane by accounting for the vertical offset $\Delta z$ between the drone and the beacon (assuming the beacon is at a fixed, known height).
 
-$$d_{2D}= \sqrt{d\_{3D}^2 - \Delta z^2}$$
+$$d_{2D}= \sqrt{d_{3D}^2 - \Delta z^2}$$
 
 Each measurement, consisting of the waypoint coordinates and the estimated 2D distance, is stored in a sliding window of the 6 most recent samples.
 
@@ -233,7 +233,7 @@ Each measurement, consisting of the waypoint coordinates and the estimated 2D di
 
 Once at least three valid measurements are available, the system estimates the beacon’s position using a Gauss–Newton optimization based on the collected data. A baseline estimate is also computed using linear least-squares trilateration for comparison.
 
-The Gauss–Newton optimizer is initialized at the position corresponding to the strongest RSSI measurement and applies inverse-square distance-based weighting ($w_i = 1/d_i^2$), thereby assigning greater importance to closer and more reliable measurements.
+The Gauss–Newton optimizer is initialized at the position corresponding to the strongest RSSI measurement and applies inverse-square distance-based weighting ($w_i = 1/d_i^2$). This weighting accounts for the logarithmic nature of RSSI: the slope of the distance-to-RSSI curve is much steeper at close range, making measurements of nearby sources significantly more sensitive and reliable than those taken from further away.
 
 Convergence and RMSE are evaluated at each iteration. If the optimizer fails to converge, or if the RMSE exceeds 1.0 m, a warning is logged and the estimate is flagged as unreliable.
 
@@ -249,7 +249,7 @@ To prevent unsafe jumps, target positions are clamped to a maximum displacement 
 > In the current implementation, the drone does not perform obstacle avoidance and does not terminate the mission autonomously.
 > The operator must issue a manual landing command to end the flight.
 
-## 8. Experimental Evaluation
+## 7. Experimental Evaluation
 
 Precise tracking requires the algorithms to account for two factors of calibration: the path loss exponent $n$ and the reference RSSI value $A$ at 1 meter. We empirically determined these parameters by performing a calibration procedure in the test environment, measuring the RSSI values at known distances from the beacon and fitting the log-distance path loss model to the data.
 
@@ -257,14 +257,23 @@ After calibration, we conducted a series of test flights in a controlled indoor 
 
 The results showed that the system was able to successfully locate the beacon and navigate towards it, with an average localization error of approximately 0.5 meters. The accuracy varied depending on the position of the beacon and the presence of obstacles, with better performance observed in line-of-sight conditions.
 
-<!--
-TODO: aggiungere grafici o tabelle con i risultati quantitativi, se disponibili.
-Ad esempio, una tabella con le posizioni reali vs stimate del beacon, o un grafico che mostra la traiettoria del drone durante il test.
--->
+### 7.1 Calibration Example
 
-## 9. Issues Encountered
+During our final tests in a home environment, we achieved stable results using the following parameters:
 
-### 9.1 UART Conflict with Flow Deck v2
+- **Reference RSSI (A):** -66 dBm
+- **Path Loss Exponent (n):** 4.0
+- **Sample Number:** 80
+
+These can be applied in the tracking script as follows:
+
+```bash
+uv run track --uri radio://0/40/2M/E7E7E7E7E6 --tx-power -66 --path-loss 4.0 --sample-num 80 <BEACON_MAC_ADDRESS>
+```
+
+## 8. Issues Encountered
+
+### 8.1 UART Conflict with Flow Deck v2
 
 During hardware integration, a conflict emerged between the ESP32 coprocessor and the Flow Deck v2.
 
@@ -276,7 +285,7 @@ Further investigation of the documentation and hardware schematics revealed that
 
 The issue was resolved by rerouting the ESP32 communication to UART1, which is not used by any of the active deck drivers. This eliminated the interference and restored stable state estimation.
 
-### 9.2 Streaming Data from ESP32 to PC
+### 8.2 Streaming Data from ESP32 to PC
 
 In the early stages, we implemented a custom application-layer, text-based protocol to stream data directly between the PC and the ESP32, using the Crazyflie as a transparent relay. This approach initially proved useful, as it simplified debugging of BLE scanning, RSSI sampling, and command handling on the ESP32.
 
@@ -286,7 +295,7 @@ However, as development progressed—particularly for localization and navigatio
 
 To address this, we integrated the ESP32 data stream into the standard Crazyflie logging infrastructure. Sampled RSSI values were exposed as regular log variables, while the associated beacon MAC address was implemented as a writable parameter. This unified approach simplified data access and improved overall system maintainability.
 
-## 10. Constraints & Known Issues
+## 9. Constraints & Known Issues
 
 Deploying the system on a small platform such as the Crazyflie introduces several hardware and environmental constraints that were taken into account during development.
 
@@ -299,48 +308,36 @@ Deploying the system on a small platform such as the Crazyflie introduces severa
 - **Top Deck Occupancy:**
   Interfacing the ESP32 coprocessor with the Crazyflie requires use of UART1, the only UART interface not allocated by onboard deck drivers. Routing this connection through the deck connector physically occupies the top expansion port, precluding the simultaneous use of any additional deck hardware that relies on the same connector.
 
-### 11. Conclusions & Future Work
+- **Manual Movement Noise:**
+  Manual positioning or rapid movement during the sampling phase introduces significant noise that exceeds the capabilities of the Median-EMA filter. This necessitates a stable hover for reliable estimation.
+
+## 10. Conclusions & Future Work
 
 ASTRA demonstrated that BLE RSSI-based localization is feasible on a nano-drone platform, successfully locating a beacon within a 5×5 m indoor environment with an average error of approximately 0.5 m. The system operated without any external infrastructure beyond the beacon itself, validating the core premise of the project.
 
 ### Hardware improvements
 
-One potential improvement is to migrate the beacon scanning and distance estimation directly onto the nRF52840 microcontroller already onboard the Crazyflie. This would eliminate the need for the ESP32 and free up the top deck expansion port for additional sensors.
+One potential improvement is to migrate the beacon scanning and distance estimation directly onto the nRF52840 microcontroller already onboard the Crazyflie, leveraging existing BLE support in the nRF firmware [4]. This would eliminate the need for the ESP32 and free up the top deck expansion port for additional sensors.
 
 Alternatively, a simpler approach would be to use longer deck pins, allowing the ESP32 to be stacked with other expansion decks while still communicating via UART1, which is not used by the Ranger deck. This configuration would enable simultaneous use of the Ranger deck, providing obstacle distance measurements in all horizontal directions.
 
-Although the hardware setup would support this, the Extended Kalman Filter does not currently incorporate these measurements. Integrating this data could improve the accuracy and robustness of the horizontal position estimate.
-
 ### Algorithmic improvements
 
-Once the system converges on a beacon estimate, the position scheduler tends to repeatedly return the same target coordinates, causing the drone to hover in place even if the estimate is inaccurate.
-This occurs because new measurements collected at the same location do not add geometric diversity to the sliding window, preventing the trilateration from refining the estimate further.
+Although the hardware setup would support adding a Ranger deck, the Extended Kalman Filter (EKF) does not currently incorporate these measurements for horizontal positioning. Integrating this data could improve the accuracy and robustness of the estimate, aligning with ongoing community efforts such as [Bitcraze PR #823](https://github.com/bitcraze/crazyflie-firmware/pull/823).
 
-The position scheduler could be extended to introduce deliberate positional perturbations when stagnation is detected. This would maintain geometric diversity in the measurement set and allow the trilateration process to continue refining the estimate.
+Furthermore, once the system converges on a beacon estimate, the position scheduler tends to repeatedly return the same target coordinates, causing the drone to hover in place even if the estimate is inaccurate. This occurs because new measurements collected at the same location do not add geometric diversity to the sliding window. The position scheduler could be extended to introduce deliberate positional perturbations when stagnation is detected, maintaining geometric diversity and allowing the trilateration process to continue refining the estimate.
 
-## 12. References
+## 11. References
 
-[BITCRAZE](https://www.bitcraze.io/documentation/repository/)
-[CRTP_COMMUNICATION](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/crtp/)
-[CPX_PACKET_STRUCTURE](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/cpx/)
-[BLE_AND_CRAZYRADIO](https://www.bitcraze.io/documentation/repository/Crazyflie2-nrf-firmware/master/protocols/ble/)
+[1] [Bitcraze Documentation Repository](https://www.bitcraze.io/documentation/repository/)
+[2] [CRTP Communication Protocol](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/crtp/)
+[3] [CPX Packet Structure](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/cpx/)
+[4] [BLE and Crazyradio on nRF52](https://www.bitcraze.io/documentation/repository/Crazyflie2-nrf-firmware/master/protocols/ble/)
 
-## 13. Contributions
+## 12. Contributions
 
 The project was completed cooperatively by all three team members, with everyone participating in all aspects:
 
-- Alessandro Ricci Armandi
+- Alessandro Ricci
 - Eyad Issa
 - Giulia Pareschi
-
-## TODO
-
-- Il problema è che muovendolo manualmente, il campionamento è mooolto più rumoroso, perchè è impossibile stare fermi
-
-Ultimi parametri buoni (casa):
-
-```shell
-uv run track --uri=radio://0/40/2M/E7E7E7E7E6 \
-      --tx-power=-66 --path-loss=4 --sample-num=80 \
-      3c:dc:75:f2:1b:69 -v
-```
