@@ -19,7 +19,7 @@ The system consists of three main components:
 ```mermaid
 graph TD
     Beacon -->|BLE| ESP32[ESP32 Module]
-    ESP32 -->|UART| CF[Crazyflie Drone]
+    ESP32 <-->|UART| CF[Crazyflie Drone]
     CF <-->|CRTP| PC[PC Application]
 ```
 
@@ -48,7 +48,7 @@ The project is organized into the following directories:
 
 ## Prerequisites
 
-- A computer with Python 3.12 or later installed
+- A computer with Python 3.12 or later installed (we recommend [uv](https://github.com/astral-sh/uv) for dependency management)
 - Git for cloning the repository and its submodules
 - PlatformIO for building and flashing the ESP32 firmware
 - Crazyflie tools for flashing the Crazyflie firmware
@@ -60,9 +60,8 @@ The project is organized into the following directories:
 > [!WARNING]
 > Do not use UART 2 for the ESP32 connection!
 >
-> Although we initially tried UART 2 (on the right side of the board), the Flow Deck uses its RX pin to send motion data to the CF.
->
-> This conflict led to drift in the state estimator.
+> The Flow Deck uses its RX pin to send motion data to the CF.
+> This conflict leads to drift in the state estimator.
 
 #### Using UART 1 (Left side of the board)
 
@@ -98,28 +97,37 @@ To get started with the project, follow these steps:
    platformio run --target upload
    ```
 
-4. Set up the Python environment for the PC application:
+4. Set up the Python environment and run the tracking application:
+
+   We recommend using [uv](https://github.com/astral-sh/uv) for fast and reliable dependency management, but you can also use standard `pip`.
+
+   ### Option A: Using uv (Recommended)
 
    ```bash
    cd pc-python
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
-   pip install .
+   uv run track --uri radio://0/40/2M/E7E7E7E7E6 --tx-power -66 --path-loss 4.0 <BEACON_MAC_ADDRESS>
    ```
 
-5. Run the tracking application:
+   ### Option B: Using standard Python & pip
 
    ```bash
-   # Use --help to see all available options
-   python3 ./scripts/track.py --help
-
-   # Example execution with typical calibration parameters
+   cd pc-python
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   pip install .
    python3 ./scripts/track.py --uri radio://0/40/2M/E7E7E7E7E6 --tx-power -66 --path-loss 4.0 <BEACON_MAC_ADDRESS>
    ```
 
 ### Calibration Note
 
 The localization accuracy depends on the path loss exponent (`--path-loss`) and the reference RSSI value (`--tx-power`). These values are environment-dependent. For details on how to determine these parameters, refer to **Section 8 (Experimental Evaluation)** of the [Project Report](docs/PROJECT.md).
+
+## Common Pitfalls & Troubleshooting
+
+- **Lighting & Floor Texture**: The Flow Deck relies on optical flow. Ensure the room is well-lit and the floor has a non-reflective, textured pattern. Avoid monochrome carpets or polished tiles.
+- **Battery Level (Voltage Sag)**: Under high motor load or low battery, the supply voltage may drop, causing the ESP32 to provide erratic RSSI readings or reboot. Ensure the battery is well-charged for flight.
+- **Stable Hovering**: The system uses aggressive filtering (Median + EMA) to handle RSSI noise. The drone must hover steadily at each waypoint for a few seconds to obtain a clean measurement.
+- **Line of Sight**: RSSI is highly sensitive to obstacles. For best results, maintain a clear line of sight between the drone and the beacon.
 
 ## Contributions
 
