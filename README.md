@@ -6,6 +6,8 @@ Built on the Crazyflie 2.1 platform, it combines onboard RSSI sampling performed
 
 The project was developed as a course project for the Cyber Physical Systems Programming course at the University of Bologna.
 
+For a detailed technical analysis of the localization algorithms, hardware constraints, and experimental results, see the [Full Project Report](docs/PROJECT.md).
+
 ## System Architecture
 
 The system consists of three main components:
@@ -38,10 +40,11 @@ The choice of the ESP32-C3 was motivated by its low cost and compatibility with 
 
 The project is organized into the following directories:
 
-- `cf-app`: Contains the code for the Crazyflie application
+- `cf-app`: Contains the code for the Crazyflie application.
 - `cf-firmware`: Contains the firmware code for the Crazyflie. It is a git submodule and tracks the official Crazyflie firmware repository.
 - `cf-esp-module`: Contains the code for the ESP32 module that will be used mounted on the Crazyflie to perform BLE scanning and signal processing.
 - `pc-python`: Contains the code for the PC application that will be used to visualize the data received from the drone and to send commands to it.
+- `docs/PROJECT.md`: Comprehensive technical report covering the theory (Trilateration, Gauss-Newton), hardware integration, and evaluation.
 
 ## Prerequisites
 
@@ -104,11 +107,19 @@ To get started with the project, follow these steps:
    pip install .
    ```
 
-5. Run one of the files contained in `pc-python/scripts`:
+5. Run the tracking application:
 
    ```bash
+   # Use --help to see all available options
    python3 ./scripts/track.py --help
+
+   # Example execution with typical calibration parameters
+   python3 ./scripts/track.py --uri radio://0/40/2M/E7E7E7E7E6 --tx-power -66 --path-loss 4.0 <BEACON_MAC_ADDRESS>
    ```
+
+### Calibration Note
+
+The localization accuracy depends on the path loss exponent (`--path-loss`) and the reference RSSI value (`--tx-power`). These values are environment-dependent. For details on how to determine these parameters, refer to **Section 8 (Experimental Evaluation)** of the [Project Report](docs/PROJECT.md).
 
 ## Contributions
 
@@ -121,11 +132,3 @@ The project was completed cooperatively by all three team members, with everyone
 ## License
 
 This project follows the [REUSE 3.3 guidelines](https://reuse.software/) for licensing. You can find a SPDX-License-Identifier in each source file, and the LICENSES directory contains the full text of each license used in the project. Please refer to the LICENSES directory for more information on the licenses used in this project.
-
-## TODOs
-
-- [ ] Write somewhere that we aggressively filter the RSSI values during capture to reduce noise, so we have to stand still for a few seconds to get a good measure.
-
-- [ ] Add section about CF <-> ESP32 communication protocol, with details about the data format and the use of COBS and CRC16 for reliable transmission.
-
-- [ ] Add "Future Improvements" section with ideas for future work, such as implementing a more sophisticated navigation strategy.
