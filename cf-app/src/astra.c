@@ -38,7 +38,10 @@ void astra_uart_bind_request_callback(void) {
 
   // Copy the bound device address
   astra_dev_addr_t device_addr;
+  
+  taskENTER_CRITICAL();
   memcpy(device_addr.bytes, &s_bound_device, ASTRA_BLE_ADDR_LEN);
+  taskEXIT_CRITICAL();
 
   const astra_dev_addr_t zero_addr = {{0}};
   bool wants_unbind = (astra_dev_addr_cmp(&device_addr, &zero_addr) == 0);
@@ -80,7 +83,9 @@ void astra_uart_bridge_task(void *params) {
     case ASTRA_UART_BIND_RESPONSE:
       if (!packet.payload.bind_response.success) {
         DEBUG_PRINT("Bind failed.\n");
+        taskENTER_CRITICAL();
         s_bound_device = 0;
+        taskEXIT_CRITICAL();
         break;
       }
 
@@ -90,12 +95,16 @@ void astra_uart_bridge_task(void *params) {
     case ASTRA_UART_UNBIND_RESPONSE:
       DEBUG_PRINT("Unbind successful!\n");
 
+      taskENTER_CRITICAL();
       s_bound_device = 0;
       s_bound_device_rssi = -1;
+      taskEXIT_CRITICAL();
       break;
 
     case ASTRA_UART_RSSI_VALUE:
+      taskENTER_CRITICAL();
       s_bound_device_rssi = packet.payload.rssi_value.rssi;
+      taskEXIT_CRITICAL();
       DEBUG_PRINT("Received RSSI value: %d dBm\n", (int)s_bound_device_rssi);
       break;
 
