@@ -168,16 +168,33 @@ The Crazyradio PA is a USB communication interface [1].
 
 ### 4.2 Software
 
-The software stack of the ASTRA system is composed of three components:
+The software stack of the ASTRA system is composed of four main components:
 
-1. **Crazyflie custom application:**
-   A custom Crazyflie app layer module that implements the localization and navigation logic, processes the RSSI data received from the ESP32, and sends telemetry data to the PC. This module leverages the standard Crazyflie firmware structure [1].
+1. **Crazyflie custom application (`cf-app`):**
+   A custom Crazyflie app layer module that implements the localization and navigation logic, processes the RSSI data received from the ESP32, and sends telemetry data to the PC.
 
-2. **ESP32 firmware:**
-   A custom firmware running on the ESP32 module that performs BLE scanning, samples RSSI values, and communicates with the Crazyflie via UART.
+2. **ESP32 Drone Module (`cf-esp-module`):**
+   A custom firmware running on the ESP32 module mounted on the Crazyflie. It performs BLE scanning, samples RSSI values, and communicates with the Crazyflie via UART.
 
-3. **PC application:**
+3. **BLE Beacon Firmware (`beacon-esp32-c3`):**
+   A simple firmware for an ESP32-C3 based beacon that broadcasts BLE advertisements used for ranging.
+
+4. **PC application (`pc-python`):**
    A Python application that uses the `cflib` library to communicate with the Crazyflie, visualize the estimated position of the beacon, and send high-level commands to the drone.
+
+### 4.3 Project Structure & Build System
+
+The project is structured as a monorepo with multiple components using different build systems:
+
+| Component      | Directory         | Build System              |
+| -------------- | ----------------- | ------------------------- |
+| Crazyflie App  | `cf-app`          | Crazyflie OOT (Make)      |
+| ESP32 Module   | `cf-esp-module`   | PlatformIO                |
+| BLE Beacon     | `beacon-esp32-c3` | PlatformIO                |
+| PC Application | `pc-python`       | Python (uv)               |
+| CF Firmware    | `cf-firmware`     | Kbuild / Make (Submodule) |
+
+The **Crazyflie App** is built as an "Out-of-Tree" (OOT) module, meaning it is compiled against the main Crazyflie firmware (included as a git submodule in `cf-firmware`) without modifying its source tree. The **ESP32 components** utilize PlatformIO for dependency management and cross-compilation. The **PC application** uses `uv` for modern Python package management and reproducible environments.
 
 ## 5. Communication Protocol
 
