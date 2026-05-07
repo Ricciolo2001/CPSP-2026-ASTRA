@@ -278,14 +278,14 @@ The results showed that the system was able to successfully locate the beacon an
 
 During our final tests in a home environment, we achieved stable results using the following parameters:
 
-- **Reference RSSI (A):** -66 dBm
+- **Reference RSSI (A):** -60 dBm
 - **Path Loss Exponent (n):** 4.0
-- **Sample Number:** 80
+- **Sample Number:** 100
 
 These can be applied in the tracking script as follows:
 
 ```bash
-uv run track --uri radio://0/40/2M/E7E7E7E7E6 --tx-power -66 --path-loss 4.0 --sample-num 80 <BEACON_MAC_ADDRESS>
+uv run track --uri radio://0/40/2M/E7E7E7E7E6 --tx-power -60 --path-loss 4.0 --sample-num 100 <BEACON_MAC_ADDRESS>
 ```
 
 ## 8. Issues Encountered
@@ -340,16 +340,16 @@ Alternatively, a simpler approach would be to use longer deck pins, allowing the
 
 ### Algorithmic improvements
 
-Although the hardware setup would support adding a Ranger deck, the Extended Kalman Filter (EKF) does not currently incorporate these measurements for horizontal positioning. Integrating this data could improve the accuracy and robustness of the estimate, aligning with ongoing community efforts such as [Bitcraze PR #823](https://github.com/bitcraze/crazyflie-firmware/pull/823).
+Although the hardware setup would support adding a Multi-Ranger deck, the Extended Kalman Filter (EKF) does not currently incorporate these measurements for horizontal positioning. Integrating this data could improve the accuracy and robustness of the estimate, aligning with ongoing community efforts such as [Bitcraze PR #823](https://github.com/bitcraze/crazyflie-firmware/pull/823).
 
 Furthermore, once the system converges on a beacon estimate, the position scheduler tends to repeatedly return the same target coordinates, causing the drone to hover in place even if the estimate is inaccurate. This occurs because new measurements collected at the same location do not add geometric diversity to the sliding window. The position scheduler could be extended to introduce deliberate positional perturbations when stagnation is detected, maintaining geometric diversity and allowing the trilateration process to continue refining the estimate.
 
 ## 11. References
 
-[1] [Bitcraze Documentation Repository](https://www.bitcraze.io/documentation/repository/)
-[2] [CRTP Communication Protocol](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/crtp/)
-[3] [CPX Packet Structure](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/cpx/)
-[4] [BLE and Crazyradio on nRF52](https://www.bitcraze.io/documentation/repository/Crazyflie2-nrf-firmware/master/protocols/ble/)
+- [1] [Bitcraze Documentation Repository](https://www.bitcraze.io/documentation/repository/)
+- [2] [CRTP Communication Protocol](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/crtp/)
+- [3] [CPX Packet Structure](https://www.bitcraze.io/documentation/repository/Crazyflie-firmware/master/functional-areas/cpx/)
+- [4] [BLE and Crazyradio on nRF52](https://www.bitcraze.io/documentation/repository/Crazyflie2-nrf-firmware/master/protocols/ble/)
 
 ## 12. Contributions
 
