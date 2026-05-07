@@ -47,7 +47,7 @@ DEFAULT_SAMPLE_INTERVAL_MS = 100  # Log sampling interval in milliseconds
 
 # The height of the beacon above the ground plane. This is used to improve
 # distance estimation by accounting for the vertical offset in the trilateration.
-Z_BEACON = 0.2
+Z_BEACON = 0.7  # meters (70 cm)
 
 
 logger = logging.getLogger(__name__)
@@ -58,14 +58,14 @@ class GuiRecord:
     type: str
     x: float
     y: float
+    radius: Optional[float] = None
 
 
 Measurement = namedtuple("Measurement", ["timestamp", "x", "y", "distance", "rssi"])
 
 INITIAL_POSITIONS = [
-    (1.0, 0.0),
-    (1.0, 1.0),
-    (0.0, 1.0),
+    (2.0, 1.0),
+    (2.0, 2.0),
     (0.0, 0.0),
 ]
 
@@ -112,17 +112,10 @@ class BeaconTracker:
         # Consider the best measurement as the one with the strongest RSSI
         best = max(self.measurements, key=lambda m: m.rssi)
 
-        # Higher RSSI -> more weight
-        max_weight = 1000
-        weights = [
-            min(1.0 / ((m.distance + 1e-3) ** 2), max_weight) for m in self.measurements
-        ]
-
         est = trilaterate_lm(
             anchors=[(m.x, m.y) for m in self.measurements],
             distances=[m.distance for m in self.measurements],
             initial_guess=(best.x, best.y),
-            weights=weights,
         )
         logger.info(
             f"  [Gauss-Newton] x={est.x:.3f} y={est.y:.3f} rmse={est.rmse:.3f} "
@@ -181,6 +174,9 @@ class GUI:
         )
         self.status_label.pack()
 
+        # Track items for each measurement to remove them when they leave the window
+        self.measurement_items: list[list[int]] = []
+
     def _to_coords(self, x, y):
         """Convert meters to pixels."""
         cx = self.offset + (x * self.scale)
@@ -201,9 +197,36 @@ class GUI:
 
                 elif record.type == "acquired":
                     # Mark as acquired with a green square
-                    self.canvas.create_rectangle(
+                    item_id = self.canvas.create_rectangle(
                         cx - 6, cy - 6, cx + 6, cy + 6, fill="#2ecc71", outline="white"
                     )
+                    self.measurement_items.append([item_id])
+
+                elif record.type == "circle":
+                    # Draw trilateration circle
+                    cx, cy = self._to_coords(record.x, record.y)
+                    if record.radius is not None:
+                        r = record.radius * self.scale
+                        item_id = self.canvas.create_oval(
+                            cx - r,
+                            cy - r,
+                            cx + r,
+                            cy + r,
+                            outline="#3498db",
+                            dash=(4, 4),
+                        )
+                        if self.measurement_items:
+                            self.measurement_items[-1].append(item_id)
+                        else:
+                            self.measurement_items.append([item_id])
+
+                    # Remove old measurement items if we exceed the tracker's capacity
+                    while (
+                        len(self.measurement_items) > self.tracker.measurements.maxlen
+                    ):
+                        old_items = self.measurement_items.pop(0)
+                        for item in old_items:
+                            self.canvas.delete(item)
 
                 elif record.type == "pos":
                     # Update Drone Position (Red Dot)
@@ -336,6 +359,9 @@ class AstraController:
                 # Update tracker with the new measurement
                 self.tracker.track(
                     Measurement(time.time(), target_x, target_y, distance_2d, rssi)
+                )
+                self.gui_queue.put(
+                    GuiRecord(type="circle", x=target_x, y=target_y, radius=distance_2d)
                 )
 
         except Exception as e:

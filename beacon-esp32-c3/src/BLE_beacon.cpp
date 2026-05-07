@@ -10,7 +10,7 @@ void setup()
   Serial.println("Starting BLE Beacon...");
 
   NimBLEDevice::init("ASTRA BEACON");
-  NimBLEDevice::setPower(ESP_PWR_LVL_P21);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->start();
