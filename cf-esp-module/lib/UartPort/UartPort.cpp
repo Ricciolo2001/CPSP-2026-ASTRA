@@ -1,6 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Alessandro Armandi
+// SPDX-FileCopyrightText: 2026 Eyad Issa
+//
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2026 Eyad Issa <eyadlorenzo@gmail.com>
-// SPDX-FileCopyrightText: 2026 Alessandro Ricci Armandi
 
 #include "UartPort.hpp"
 

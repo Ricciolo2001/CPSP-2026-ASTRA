@@ -1,5 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Alessandro Ricci
+# SPDX-FileCopyrightText: 2026 Eyad Issa
+# SPDX-FileCopyrightText: 2026 Giulia Pareschi
+#
+# SPDX-License-Identifier: MIT
+
 import pytest
-from astra.rssi import rssi_to_distance, MedianEmaFilter
+
+from astra.rssi import MedianEmaFilter, rssi_to_distance
 
 
 class TestRssiToDistance:

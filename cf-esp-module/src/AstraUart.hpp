@@ -1,6 +1,7 @@
+// SPDX-FileCopyrightText: 2026 Eyad Issa
+// SPDX-FileCopyrightText: 2026 Alessandro Armandi
+//
 // SPDX-License-Identifier: MIT
-// SPDX-FileCopyrightText: 2026 Eyad Issa <eyadlorenzo@gmail.com>
-// SPDX-FileCopyrightText: 2026 Alessandro Ricci Armandi
 
 #pragma once
 

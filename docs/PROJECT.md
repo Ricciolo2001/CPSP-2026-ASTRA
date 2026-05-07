@@ -1,3 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2026 Alessandro Ricci
+SPDX-FileCopyrightText: 2026 Eyad Issa
+SPDX-FileCopyrightText: 2026 Giulia Pareschi
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+
 # ASTRA
 
 ## 1. Abstract

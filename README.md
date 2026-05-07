@@ -1,3 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2026 Alessandro Ricci
+SPDX-FileCopyrightText: 2026 Eyad Issa
+SPDX-FileCopyrightText: 2026 Giulia Pareschi
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+
 # ASTRA
 
 **ASTRA** (_Autonomous Signal Tracking & Ranging Aircraft_) is an autonomous drone system that locates the source of a Bluetooth Low Energy (BLE) beacon inside a room and navigates towards it.
@@ -22,8 +30,6 @@ graph TD
     ESP32 <-->|UART| CF[Crazyflie Drone]
     CF <-->|CRTP| PC[PC Application]
 ```
-
-![Project schema img](res/schema_progetto.drawio.png)
 
 ## Hardware Required
 

@@ -1,2 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Alessandro Ricci
+# SPDX-FileCopyrightText: 2026 Eyad Issa
+#
+# SPDX-License-Identifier: MIT
+
 BasedOnStyle: LLVM
 IndentWidth: 4
